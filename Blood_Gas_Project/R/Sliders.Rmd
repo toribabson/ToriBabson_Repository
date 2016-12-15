@@ -1,0 +1,302 @@
+---
+title: "super turtle function"
+output: html_document
+---
+The objective is to see how long after taking a blood sample can the blood acid-base parameters be measured accurately or if there is
+
+1) monitor the changes in blood acid-base parameters as a function of time
+2) observe the difference in these values between different syringe types.
+
+
+DATA TIDYING FOR FIRST TURTLE DATA 
+```{r}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(censReg)
+
+
+#Load
+sliders <- read_excel('~/Dropbox/Blood_Gas_Project/Data/BG_data_SLIDERS.xlsx', skip = 0)
+
+#work with only one chunk at a time
+sliders_1 <-sliders[1:9, 1:8]
+
+#separate meta data labels and values
+names(sliders_1) <- c("Turtle", "Value", "T0", "T1", "T2", "T3", "T4", "T5")
+
+sliders_1 <- separate(data = sliders_1, col = "Turtle", into = c("Meta", "Data"), sep = ": ")
+
+#save it in its own data frame and remove from table for now
+meta_data_sliders <- data.frame(sliders_1[1:4, 1:2])
+
+sliders_1 <- sliders_1[1:9,3:9]
+sliders_1 <- sliders_1[-1,]
+
+# TRANSPOSE
+sliders_1 <- t(sliders_1)
+sliders_1 <- as.data.frame(sliders_1, stringsAsFactors = FALSE)
+
+#add time column, remove row names, and fix the column names
+sliders_1$Time <- gsub("Value", "Time", rownames(sliders_1))
+rownames(sliders_1) <- NULL
+names(sliders_1) <- sliders_1[1,1:9]
+sliders_1 <- sliders_1[-1,]
+
+# TRANSPOSE AND FORMAT META DATA
+meta_data_sliders <- t(meta_data_sliders)
+meta_data_sliders <- as.data.frame(meta_data_sliders, stringsAsFactors = FALSE)
+
+# correct column names, clear row name in meta data
+names(meta_data_sliders) <- meta_data_sliders[1,1:4]
+meta_data_sliders <- meta_data_sliders[-1,]
+rownames(meta_data_sliders) <- NULL
+
+# turtle, temp, and weight values as numeric
+meta_data_sliders$`Turtle` <- as.numeric(meta_data_sliders$`Turtle`)
+
+meta_data_sliders$`Internal Temp` <- as.numeric(gsub("\\sC", "",
+                                          meta_data_sliders$`Internal Temp`))
+meta_data_sliders$`Weight` <- as.numeric(gsub("\\sg", "",
+                                              meta_data_sliders$`Weight`))
+
+#put meta data back onto main data frame
+complete_sliders <- data.frame(sliders_1, meta_data_sliders)
+``` 
+
+FUNCTION TO TRANSFORM/TIDY AND RBIND THE REST OF THE TURTLES
+```{r}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+# FUNCTION:
+
+read_sliders_transform <- function(turtle_number){
+  #file name
+  filename <- paste0('~/Dropbox/Blood_Gas_Project/Data/BG_data_SLIDERS.xlsx')
+  
+  #read in per turtle
+  sliders <- read_excel(filename, skip = turtle_number*10-10)
+  
+  #only one turtle at a time
+  sliders_1 <-sliders[1:9, 1:8]
+  
+  #rename columns
+  names(sliders_1) <- c("Turtle", "Value", "T0", "T1", "T2", "T3", "T4", "T5")
+  
+  #separate meta data into two columns
+  sliders_1 <- separate(data = sliders_1, col = "Turtle", into = c("Meta", "Data"), sep = ": ")
+  
+  #save meta data as a new data frame
+  meta_data_sliders <- data.frame(sliders_1[1:4, 1:2])
+  
+  #get rid of extra rows and columns
+  sliders_1 <- sliders_1[2:9,3:9]
+  
+  #transpose
+  sliders_1 <- t(sliders_1)
+  
+  #get rid of factors
+  sliders_1 <- as.data.frame(sliders_1, stringsAsFactors = FALSE)
+  
+  #add time column and rename value
+  sliders_1$Time <- gsub("Value", "Time", rownames(sliders_1))
+  
+  #rename columns
+  names(sliders_1) <- sliders_1[1,1:9]
+  
+  #remove first row
+  sliders_1 <- sliders_1[-1,]
+  
+  # TRANSPOSE AND FORMAT META DATA
+  meta_data_sliders <- t(meta_data_sliders)
+  meta_data_sliders <- as.data.frame(meta_data_sliders, stringsAsFactors = FALSE)
+  
+  # correct column names
+  names(meta_data_sliders) <- meta_data_sliders[1,1:4]
+  meta_data_sliders <- meta_data_sliders[-1,]
+  
+  #clear row names
+  rownames(meta_data_sliders) <- NULL
+  
+  # Make variables numeric and remove extra characters
+  meta_data_sliders$`Turtle` <- as.numeric(meta_data_sliders$`Turtle`)
+  meta_data_sliders$`Internal Temp` <- as.numeric(gsub("\\sC", "", meta_data_sliders$`Internal Temp`))
+  meta_data_sliders$`Weight` <- as.numeric(gsub("\\sg", "", meta_data_sliders$`Weight`))
+  
+  #add meta data back to data frame
+  complete_sliders2 <- data.frame(sliders_1, meta_data_sliders)
+  
+  #rbind to compelte data frame
+  complete_sliders <- rbind(complete_sliders, complete_sliders2)
+  return(complete_sliders)
+}
+  
+# Run above function for turtles 2 through 10
+for(i in 2:10){
+  complete_sliders <- read_sliders_transform(i)
+}
+
+
+#need to be numeric for temperature corrections
+complete_sliders$pH <- as.numeric(complete_sliders$pH)
+complete_sliders$PCO2 <- as.numeric(complete_sliders$PCO2)
+complete_sliders$PO2 <- as.numeric(complete_sliders$PO2)
+
+#temperature corrections
+complete_sliders$temp_change <- (37 - complete_sliders$Internal.Temp)
+complete_sliders$pH <- ((0.0144*complete_sliders$temp_change) + complete_sliders$pH)
+complete_sliders$PCO2 <- (complete_sliders$PCO2*(10^-0.019*complete_sliders$temp_change))
+complete_sliders$PO2 <- (complete_sliders$PO2*(10^-0.0058*complete_sliders$temp_change))
+
+# Filter NAs in pH 
+  #(no values for turtle 3 at T4, removes whole row of NAs)
+complete_sliders <- complete_sliders %>%
+  filter(!is.na(pH))
+
+# time to numeric values (in minutes)
+complete_sliders$Time <- gsub("T0", 0, complete_sliders$Time)
+complete_sliders$Time <- gsub("T1", 5, complete_sliders$Time)
+complete_sliders$Time <- gsub("T2", 10, complete_sliders$Time)
+complete_sliders$Time <- gsub("T3", 15, complete_sliders$Time)
+complete_sliders$Time <- gsub("T4", 45, complete_sliders$Time)
+complete_sliders$Time <- gsub("T5", 90, complete_sliders$Time)
+
+# make time numeric
+complete_sliders$Time <- as.numeric(complete_sliders$Time)
+
+
+```
+
+DATA FRAME WITH ONLY FOCAL VARIABLES AND WITHOUT META DATA
+```{r, eval=FALSE}
+#store all variables and meta data before cutting out extra
+tidy_complete_sliders <- complete_sliders
+
+#cut out non-focal variables for analysis
+# (keep Lac, pH, PCO2, PO2)
+complete_sliders <- complete_sliders[1:59,5:10]
+
+
+```
+
+
+***
+ANALYSIS
+
+```{r}
+##### Lac #####
+
+
+# assume <0.30 = 0 for Lac values for Turtle 10 for analysis
+complete_sliders$Lac <- as.numeric(gsub("<0.30", "0", complete_sliders$Lac))
+
+
+ggplot(data = complete_sliders, aes(x = Time, y = Lac)) +
+  geom_point() +
+  scale_y_continuous() +
+  stat_smooth(method = lm)
+  
+
+complete_sliders$Lac2 <- as.numeric(complete_sliders$Lac)
+
+Lac_mod <- lm(Lac2 ~ Time, data =  complete_sliders)
+summary(Lac_mod)
+
+complete_sliders$Lac <- as.numeric(complete_sliders$Lac)
+
+
+
+##### pH #####
+ggplot(data = complete_sliders, aes(x = Time, y = pH)) +
+  geom_point() +
+  stat_smooth(method = lm)
+
+pH_mod <- lm(pH ~ Time, data = complete_sliders)
+summary(pH_mod)
+
+
+
+
+##### PCO2 #####
+
+ggplot(data = complete_sliders, aes(x = Time, y = PCO2, color = factor(Turtle), by = Turtle)) +
+  geom_line() +
+  geom_point() +
+  stat_smooth(method = lm)
+
+complete_sliders$PCO2_log <- log(complete_sliders$PCO2)
+
+PCO2_mod <- lm(sqrt(PCO2) ~ Time, data = complete_sliders %>% filter(Time<25))
+#####VARIABILITY MENTION#####
+summary(PCO2_mod)
+plot(PCO2_mod)
+
+##### PO2 #####
+library(car)
+install.packages('pbkrtest')
+
+# Plot PO2 by turtle over time
+ggplot(data = complete_sliders, aes(x = Time, y = PO2, color = factor(Turtle), by = Turtle)) +
+  geom_line() +
+  geom_point() +
+  stat_smooth(method = lm)
+
+  # Log transform PO2
+complete_sliders$log_PO2 <- log10(complete_sliders$PO2)
+
+  # Plot log transformed PO2 vs Time data
+ggplot(data = complete_sliders, aes(x = Time, y = log_PO2, color = factor(Turtle), by = Turtle)) +
+  geom_line() +
+  geom_point()
+
+  # Model
+PO2_mod <- lm(log(PO2) ~ Time, data = complete_sliders)
+summary(PO2_mod)
+plot(PO2_mod)
+
+PO2_mod2 <- lm(PO2 ~ Time, data = complete_sliders)
+summary(PO2_mod2)
+plot(PO2_mod2)
+
+
+
+```
+
+
+```{r, eval=FALSE}
+
+censReg(formula = Lac ~ Time, data = complete_sliders)
+
+
+## Kleiber & Zeileis ( 2008 ), page 142
+data( "Affairs", package = "AER" )
+estResult <- censReg( affairs ~ age + yearsmarried + religiousness +
+   occupation + rating, data = Affairs )
+print( estResult )
+
+
+## Kleiber & Zeileis ( 2008 ), page 143
+estResultBoth <- censReg( affairs ~ age + yearsmarried + religiousness +
+   occupation + rating, data = Affairs, right = 4 )
+print( estResultBoth )
+
+
+# gamma distribution
+# family = gamma (link = log)
+```
+
+```{r, eval=FALSE}
+
+# write.csv(tidy_sliders, file = 'tidy_turtle_data.csv')
+# write.csv(complete_sliders, file = 'focal_turtle_data_zeros.csv')
+```
+
+
+
+TURTLE 6 T3 = 18 MIN NOT 15
+
+

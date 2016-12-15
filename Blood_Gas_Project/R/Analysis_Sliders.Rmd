@@ -1,0 +1,157 @@
+---
+title: "Analysis_Sliders"
+output: html_document
+---
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+
+Load files
+```{r}
+sliders <- read.csv('~/Dropbox/Blood_Gas_Project/Data/turtles/tidy_turtle_data.csv', stringsAsFactors = FALSE)
+sliders$TCO2 <- as.numeric(sliders$TCO2)
+```
+
+
+
+
+##### LACTATE
+
+```{r}
+#need to take out non numeric <0.3
+sliders$Lac <- as.numeric(sliders$Lac)
+
+ggplot(data = sliders, aes(x=Time, y=Lac, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+#new data frame with NAs removed for this test
+sliders_lac <- sliders %>%
+  filter(!is.na(Lac))
+
+#try linear regression first
+Lac_mod <- lm(Lac ~ Time, data =  sliders_lac)
+summary(Lac_mod)
+
+plot(Lac_mod, which = 1)
+plot(Lac_mod, which = 2)
+
+slacmod <- lme(Lac ~ Time, data = sliders_lac, random = ~1 | Turtle)
+
+summary(slacmod)
+
+
+
+### The very high p-value (0.708), means we fail to reject the null hypothesis that there is no differece in lactate values over time. The qq plot is not ideal, suggesting that this data may not be perfectly linear. 
+
+
+#try transforming data to be more linear
+ #log
+Lac_mod2 <- lm(log(Lac) ~ Time, data =  sliders_lac)
+summary(Lac_mod2)
+plot(Lac_mod2, which = 1)
+plot(Lac_mod2, which = 2)
+
+### log is not better
+
+
+```
+
+
+##### pH
+```{r}
+ggplot(data = sliders, aes(x=Time, y=pH, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+# start with linear
+ph_mod <- lm(pH ~ Time, data = sliders)
+summary(ph_mod)
+plot(ph_mod, which = 1)
+plot(ph_mod, which = 2)
+
+### This qq plot shows the same concerning pattern at the end of the line that was seen with lac variable. However the regression test showed a very low p value (0.00583). With some further investigating into the qq plot in mind, we can reject the null hypothess that there is no difference in pH over time. Therefore we accept the alternative hypothesis that pH does change significantly over time. 
+
+sphmod <- lme(pH ~ Time, data = sliders, random = ~1 | Turtle)
+summary(sphmod)
+
+
+```
+
+
+--------------------
+# PCO2
+--------------------
+```{r}
+ggplot(data = sliders, aes(x=Time, y=PCO2, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+#linear
+pco2_mod <- lm(PCO2 ~ Time, data = sliders)
+summary(pco2_mod)
+plot(pco2_mod)
+
+#log
+pco2_mod2 <- lm(log(PCO2) ~ Time, data = sliders)
+summary(pco2_mod2)
+plot(pco2_mod2)
+
+
+spco2mod <- lme(PCO2 ~ Time, data = sliders, random = ~1 | Turtle)
+summary(spco2mod)
+```
+
+
+--------------------
+# PO2
+--------------------
+```{r}
+#initial visualization before analysis
+ggplot(data = sliders, aes(x=Time, y=PO2, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+PO2_plot <- ggplot(data = sliders, aes(x=Time, y=log(PO2), color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() 
+
+#try log linear regression first
+PO2_mod <- lm(log(PO2) ~ Time, data =  sliders)
+summary(PO2_mod)
+plot(PO2_mod)
+
+spo2mod <- lme(PO2 ~ Time, data = sliders, random = ~1 | Turtle)
+summary(spo2mod)
+
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+```{r, eval=FALSE}
+with(complete_sliders, pairwise.t.test(x=PO2, g=as.factor(Time), p.adjust.method = "bonf", paired = T))
+
+PO2_test <- aov(data = complete_sliders, (PO2) ~ Turtle*as.factor(Time) + Error(Turtle))
+summary(PO2_test)
+
+TukeyHSD(PO2_test, which = "Time")
+```
+
+
+
+
+
+

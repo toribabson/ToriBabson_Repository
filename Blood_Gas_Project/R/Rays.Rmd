@@ -1,0 +1,159 @@
+---
+title: "Rays"
+output: html_document
+---
+```{r}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+
+#Load
+rays <- read_excel('~/Dropbox/Blood_Gas_Project/Data/BG_data_RAYS.xlsx', skip = 0)
+
+#Work with one chunk at a time
+rays_1 <- rays[1:10,1:14]
+
+#separate meta data and labels (all columns must be named first)
+  # the label "Time" will make sense after transposing data
+names(rays_1) <- c("Ray", "Time", "T0", "T0", "T1", "T1", "T2", "T2", "T3", "T3", "T4", "T4", "T5", "T5")
+
+rays_1 <- separate(data = rays_1, col = "Ray", into = c("Meta", "Data"), sep = ": ")
+
+#save meta data in its own data frame
+meta_data_rays <- data.frame(rays_1[1:4,1:2])
+
+#take meta data out of main data frame
+rays_1 <- rays_1[1:10,3:15]
+
+#put col names in first row so they become a new column after transposing instead of just row names
+rays_1[1,] <- names(rays_1)
+
+#transpose
+rays_1 <- t(rays_1)
+rays_1 <- as.data.frame(rays_1, stringsAsFactors = FALSE)
+
+#use row 1 to rename columns and clear row names
+names(rays_1) <-rays_1[1,]
+rays_1 <- rays_1[-1,]
+row.names(rays_1) <- NULL
+
+#transpose meta data
+meta_data_rays <- t(meta_data_rays)
+meta_data_rays <- as.data.frame(meta_data_rays, stringsAsFactors = FALSE)
+
+# correct column names, clear row name in meta data
+names(meta_data_rays) <- meta_data_rays[1,1:4]
+meta_data_rays <- meta_data_rays[-1,]
+row.names(meta_data_rays) <- NULL
+
+# pit number, weight and wingspan in meta data as numeric
+meta_data_rays$Pit_Num <- as.numeric(meta_data_rays$Pit_Num)
+
+meta_data_rays$Weight <- as.numeric(gsub("\\skg", "", meta_data_rays$Weight))
+
+meta_data_rays$Wingspan <- as.numeric(gsub("\\scm", "", meta_data_rays$Wingspan))
+
+#put meta data back in main data frame
+complete_rays <- data.frame(rays_1, meta_data_rays)
+```
+
+
+FUNCTION TO TIDY ALL RAY DATA
+```{r}
+
+read_rays_transform <- function(ray_number){
+    
+  #file name
+  filename <- paste0('~/Dropbox/Blood_Gas_Project/Data/BG_data_RAYS.xlsx')
+  
+  #read in each ray
+  rays <- read_excel(filename, skip = ray_number*11-11)
+  
+  #one ray at a time
+  rays_1 <- rays[1:10,1:14]
+  
+  #separate meta data and labels (all columns must be named first)
+  names(rays_1) <- c("Ray", "Time", "T0", "T0", "T1", "T1", "T2", "T2", "T3", "T3", "T4", "T4", "T5", "T5")
+  
+  rays_1 <- separate(data = rays_1, col = "Ray", into = c("Meta", "Data"), sep = ": ")
+  
+  #save meta data in its own data frame
+  meta_data_rays <- data.frame(rays_1[1:4,1:2])
+  
+  #take meta data out of main data frame
+  rays_1 <- rays_1[1:10,3:15]
+  
+  #put col names in first row so they become a new column after transposing instead of just row names
+  rays_1[1,] <- names(rays_1)
+  
+  #transpose
+  rays_1 <- t(rays_1)
+  rays_1 <- as.data.frame(rays_1, stringsAsFactors = FALSE)
+  
+  #use row 1 to rename columns and clear row names
+  names(rays_1) <-rays_1[1,]
+  rays_1 <- rays_1[-1,]
+  row.names(rays_1) <- NULL
+  
+  #transpose meta data
+  meta_data_rays <- t(meta_data_rays)
+  meta_data_rays <- as.data.frame(meta_data_rays, stringsAsFactors = FALSE)
+  
+  # correct column names, clear row name in meta data
+  names(meta_data_rays) <- meta_data_rays[1,1:4]
+  meta_data_rays <- meta_data_rays[-1,]
+  row.names(meta_data_rays) <- NULL
+  
+  # pit number, weight and wingspan in meta data as numeric
+  meta_data_rays$Pit_Num <- as.numeric(meta_data_rays$Pit_Num)
+
+  meta_data_rays$Weight <- as.numeric(gsub("\\skg", "", meta_data_rays$Weight))
+
+  meta_data_rays$Wingspan <- as.numeric(gsub("\\scm", "", meta_data_rays$Wingspan))
+
+  #put meta data back in main data frame
+  complete_rays2 <- data.frame(rays_1, meta_data_rays)
+  
+  #add to complete data frame
+  complete_rays <- rbind(complete_rays, complete_rays2)
+  return(complete_rays)
+}
+
+
+# Run above function for rays 2 through 10
+for(i in 2:10){
+  complete_rays <- read_rays_transform(i)
+}
+
+# cut out non-focal variables
+complete_rays <- complete_rays[,-c(3:6)]
+
+# Filter out rows with NAs for all 4 variables (Lac, PO2, PCO2, and pH)
+complete_rays <- complete_rays[!with(complete_rays,is.na(Lac)& is.na(PO2)& is.na(PCO2)& is.na(pH)),]
+
+# Convert time to numeric values (in minutes) to plot accurately (since the T0-T5 integers are not constant intervals).
+complete_rays$Time <- gsub("T0", 0, complete_rays$Time)
+complete_rays$Time <- gsub("T1", 5, complete_rays$Time)
+complete_rays$Time <- gsub("T2", 10, complete_rays$Time)
+complete_rays$Time <- gsub("T3", 15, complete_rays$Time)
+complete_rays$Time <- gsub("T4", 45, complete_rays$Time)
+complete_rays$Time <- gsub("T5", 90, complete_rays$Time)
+
+# need to numeric for temp corrections
+complete_rays$pH <- as.numeric(complete_rays$pH)
+complete_rays$PCO2 <- as.numeric(complete_rays$PCO2)
+complete_rays$PO2 <- as.numeric(complete_rays$PO2)
+
+complete_rays$Lac <- as.numeric(complete_rays$Lac)
+
+# temp corrections
+complete_rays$pH <- (0.795*complete_rays$pH) + 1.797
+complete_rays$PCO2 <- (0.173*complete_rays$PCO2) + 0.775
+complete_rays$PO2 <- (0.572*complete_rays$PO2) - 1.449
+
+
+
+#write.csv(complete_rays, file = 'focal_ray_data.csv')
+

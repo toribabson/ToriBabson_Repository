@@ -1,0 +1,340 @@
+---
+title: "Final Project"
+output: html_document
+---
+
+### Introduction
+Blood gas parameters are often measured to assess the health a fish (as well as many other creatues). These parameters are known to be affected by many different processes such as stress hormone concentration in the blood. Knowing blood gas values in the blood of a fish can provide a lot of information about that animal and its environment. When collecting blood samples from animals in the field it is not always possible to run the blood tests immediately after they are taken. This is often a problem when sampling fish or other aquatic organisms only accessible by boat.
+
+In 2013, ten Cownose rays (R. bonasus) from the shark and ray touch tank at the New England Aquarium were opportunistically selected for blood sampling during their routine spine clipping. Each blood sample was repeatedly analyzed at fixed intervals in order to 1) monitor the changes in blood acid-base parameters as a function of time, and 2) observe the difference in these values between different syringe types. Also in 2013, ten Red-eared sliders (T. elegans) were selected from Rainforest Reptile Shows in Beverly, Massachusetts for blood sampling. 
+
+****-add visual summary info about data
+****-better define questions being asked
+
+
+### Methods
+
+- The raw data was formatted as 10 separate tables for each animal (for both rays and turtles), so needless to say there was quite a bit of reformatting and data tidying to be done.
+
+#### The Tidying Journey to Clean Data
+*The formatting of both the turtle and ray values were all the same except for an added variable of syringe type in the ray data. So the following first steps of coding are the same both sets of data.*
+
+
+##### Turtle Data Tidying
+```{r}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+# Load the raw ugly data.
+sliders <- read_excel('~/Dropbox/Blood_Gas_Project/Data/BG_data_SLIDERS.xlsx', skip = 0)
+
+# Work with only one chunk at a time
+sliders_1 <-sliders[1:9, 1:8]
+
+#separate meta data labels and values
+names(sliders_1) <- c("Turtle", "Value", "T0", "T1", "T2", "T3", "T4", "T5")
+
+sliders_1 <- separate(data = sliders_1, col = "Turtle", into = c("Meta", "Data"), sep = ": ")
+
+#save it in its own data frame and remove from table for now
+meta_data_sliders <- data.frame(sliders_1[1:4, 1:2])
+
+sliders_1 <- sliders_1[1:9,3:9]
+sliders_1 <- sliders_1[-1,]
+
+# TRANSPOSE
+sliders_1 <- t(sliders_1)
+sliders_1 <- as.data.frame(sliders_1, stringsAsFactors = FALSE)
+
+#add time column, remove row names, and fix the column names
+sliders_1$Time <- gsub("Value", "Time", rownames(sliders_1))
+rownames(sliders_1) <- NULL
+names(sliders_1) <- sliders_1[1,1:9]
+sliders_1 <- sliders_1[-1,]
+
+# TRANSPOSE AND FORMAT META DATA
+meta_data_sliders <- t(meta_data_sliders)
+meta_data_sliders <- as.data.frame(meta_data_sliders, stringsAsFactors = FALSE)
+
+# correct column names, clear row name in meta data
+names(meta_data_sliders) <- meta_data_sliders[1,1:4]
+meta_data_sliders <- meta_data_sliders[-1,]
+rownames(meta_data_sliders) <- NULL
+
+# turtle, temp, and weight values as numeric
+meta_data_sliders$`Turtle` <- as.numeric(meta_data_sliders$`Turtle`)
+
+meta_data_sliders$`Internal Temp` <- as.numeric(gsub("\\sC", "",
+                                          meta_data_sliders$`Internal Temp`))
+meta_data_sliders$`Weight` <- as.numeric(gsub("\\sg", "",
+                                              meta_data_sliders$`Weight`))
+
+#put meta data back onto main data frame
+complete_sliders <- data.frame(sliders_1, meta_data_sliders)
+``` 
+***
+```{r}
+# Function to transform/tidy as well as rbind the rest of the turtles
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+# FUNCTION:
+
+read_sliders_transform <- function(turtle_number){
+  #file name
+  filename <- paste0('~/Dropbox/Blood_Gas_Project/Data/BG_data_SLIDERS.xlsx')
+  
+  #read in per turtle
+  sliders <- read_excel(filename, skip = turtle_number*10-10)
+  
+  #only one turtle at a time
+  sliders_1 <-sliders[1:9, 1:8]
+  
+  #rename columns
+  names(sliders_1) <- c("Turtle", "Value", "T0", "T1", "T2", "T3", "T4", "T5")
+  
+  #separate meta data into two columns
+  sliders_1 <- separate(data = sliders_1, col = "Turtle", into = c("Meta", "Data"), sep = ": ")
+  
+  #save meta data as a new data frame
+  meta_data_sliders <- data.frame(sliders_1[1:4, 1:2])
+  
+  #get rid of extra rows and columns
+  sliders_1 <- sliders_1[2:9,3:9]
+  
+  #transpose
+  sliders_1 <- t(sliders_1)
+  
+  #get rid of factors
+  sliders_1 <- as.data.frame(sliders_1, stringsAsFactors = FALSE)
+  
+  #add time column and rename value
+  sliders_1$Time <- gsub("Value", "Time", rownames(sliders_1))
+  
+  #rename columns
+  names(sliders_1) <- sliders_1[1,1:9]
+  
+  #remove first row
+  sliders_1 <- sliders_1[-1,]
+  
+  # TRANSPOSE AND FORMAT META DATA
+  meta_data_sliders <- t(meta_data_sliders)
+  meta_data_sliders <- as.data.frame(meta_data_sliders, stringsAsFactors = FALSE)
+  
+  # correct column names
+  names(meta_data_sliders) <- meta_data_sliders[1,1:4]
+  meta_data_sliders <- meta_data_sliders[-1,]
+  
+  #clear row names
+  rownames(meta_data_sliders) <- NULL
+  
+  # Make variables numeric and remove extra characters
+  meta_data_sliders$`Turtle` <- as.numeric(meta_data_sliders$`Turtle`)
+  meta_data_sliders$`Internal Temp` <- as.numeric(gsub("\\sC", "", meta_data_sliders$`Internal Temp`))
+  meta_data_sliders$`Weight` <- as.numeric(gsub("\\sg", "", meta_data_sliders$`Weight`))
+  
+  #add meta data back to data frame
+  complete_sliders2 <- data.frame(sliders_1, meta_data_sliders)
+  
+  #rbind to compelte data frame
+  complete_sliders <- rbind(complete_sliders, complete_sliders2)
+  return(complete_sliders)
+}
+  
+# Run above function for turtles 2 through 10
+for(i in 2:10){
+  complete_sliders <- read_sliders_transform(i)
+}
+
+
+#need to be numeric for temperature corrections
+complete_sliders$pH <- as.numeric(complete_sliders$pH)
+complete_sliders$PCO2 <- as.numeric(complete_sliders$PCO2)
+complete_sliders$PO2 <- as.numeric(complete_sliders$PO2)
+
+#temperature corrections
+complete_sliders$temp_change <- (37 - complete_sliders$Internal.Temp)
+complete_sliders$pH <- ((0.0144*complete_sliders$temp_change) + complete_sliders$pH)
+complete_sliders$PCO2 <- (complete_sliders$PCO2*(10^-0.019*complete_sliders$temp_change))
+complete_sliders$PO2 <- (complete_sliders$PO2*(10^-0.0058*complete_sliders$temp_change))
+
+# Filter NAs in pH 
+  #(no values for turtle 3 at T4, removes whole row of NAs)
+complete_sliders <- complete_sliders %>%
+  filter(!is.na(pH))
+
+# time to numeric values (in minutes)
+complete_sliders$Time <- gsub("T0", 0, complete_sliders$Time)
+complete_sliders$Time <- gsub("T1", 5, complete_sliders$Time)
+complete_sliders$Time <- gsub("T2", 10, complete_sliders$Time)
+complete_sliders$Time <- gsub("T3", 15, complete_sliders$Time)
+complete_sliders$Time <- gsub("T4", 45, complete_sliders$Time)
+complete_sliders$Time <- gsub("T5", 90, complete_sliders$Time)
+
+# make time numeric
+complete_sliders$Time <- as.numeric(complete_sliders$Time)
+
+
+```
+
+```{r, eval=FALSE}
+# Newly tidy data was saved as a csv file
+write.csv(tidy_sliders, file = 'tidy_turtle_data.csv')
+```
+
+***ADD RAY CODE****
+- Based on the data and question, what is the workflow you put together to answer your question? Feel free to write it out step-by-step
+- How did you prepare and manupulate the data to get it ready for analysis?
+- What are the different steps you need to take? Why are they they the right thing to do?
+- What are the visualizations and analyses that would answer your questions?
+- What are the underlying models you are going to use - what is your data generating process and your error generating process?
+- What statistical tests will you use, if any?
+- How will you validate your tests?
+
+
+
+
+***
+
+### Results
+
+Load files
+```{r}
+sliders <- read.csv('~/Dropbox/Blood_Gas_Project/Data/turtles/tidy_turtle_data.csv', stringsAsFactors = FALSE)
+sliders$TCO2 <- as.numeric(sliders$TCO2)
+```
+***
+
+##### LACTATE
+```{r}
+#need to take out non numeric <0.3
+sliders$Lac <- as.numeric(sliders$Lac)
+
+ggplot(data = sliders, aes(x=Time, y=Lac, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+#new data frame with NAs removed for this test
+sliders_lac <- sliders %>%
+  filter(!is.na(Lac))
+
+#try linear regression first
+Lac_mod <- lm(Lac ~ Time, data =  sliders_lac)
+summary(Lac_mod)
+
+plot(Lac_mod, which = 1)
+plot(Lac_mod, which = 2)
+
+### The very high p-value (0.708), means we fail to reject the null hypothesis that there is no differece in lactate values over time. The qq plot is not ideal, suggesting that this data may not be perfectly linear. 
+
+
+#try transforming data to be more linear
+ #log
+Lac_mod2 <- lm(log(Lac) ~ Time, data =  sliders_lac)
+summary(Lac_mod2)
+plot(Lac_mod2, which = 1)
+plot(Lac_mod2, which = 2)
+
+### log is not better
+
+
+```
+***
+
+##### pH
+```{r}
+ggplot(data = sliders, aes(x=Time, y=pH, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+# start with linear
+ph_mod <- lm(pH ~ Time, data = sliders)
+summary(ph_mod)
+plot(ph_mod, which = 1)
+plot(ph_mod, which = 2)
+
+### This qq plot shows the same concerning pattern at the end of the line that was seen with lac variable. However the regression test showed a very low p value (0.00583). With some further investigating into the qq plot in mind, we can reject the null hypothess that there is no difference in pH over time. Therefore we accept the alternative hypothesis that pH does change significantly over time. 
+
+ggplot(data = sliders, aes(x=Time, y=pH)) +
+  geom_point() +
+  stat_smooth(method = lm)
+
+```
+***
+*ADD FIRST FEW TESTS FROM RAYS*
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(car)
+
+# Load data 
+rays <- read.csv('~/Dropbox/Blood_Gas_Project/Data/rays/focal_ray_data.csv', stringsAsFactors = FALSE)
+rays <- rays[1:101,2:8]
+
+# Gather the variables into column
+rays_gath <- rays %>%
+  gather(key = "Variable", "Value", 3:6)
+
+rays_gath <- rays_gath %>%
+  filter(!is.na(Value))
+
+ggplot(data = rays_gath, aes(x=Time, y=Value, color=factor(Ray), by=Ray)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(Variable ~ Syringe, scales = "free")
+```
+
+##### Looking for differences in syringe types
+```{r}
+syringe_mod <- lm(Value ~ Time*Syringe, data = rays_gath)
+syringe_mod2 <- lm(Value ~ Time + Syringe + 0, data = rays_gath)
+
+
+# assumptions
+plot(syringe_mod, which = 1)
+plot(syringe_mod, which = 2)
+
+# results
+Anova(syringe_mod)
+
+#visualize (means and standard deviation)
+ggplot(data = rays_gath, mapping = aes(x = Syringe, y = Value)) +
+  stat_summary(fun.data = mean_se)
+
+ggplot(data = rays_gath, aes(x=Syringe, y=Value, color=factor(Syringe), by=Syringe)) +
+  geom_boxplot()
+
+# assumptions
+plot(syringe_mod2, which = 1)
+plot(syringe_mod2, which = 2)
+
+# results
+Anova(syringe_mod2)
+
+ggplot(data = rays_gath, aes(x=Value, color=factor(Syringe), by=Syringe)) +
+  geom_histogram(bins = 7) +
+  facet_wrap(~Syringe)
+```
+
+
+
+
+
+
+*In this section, show the analyses and visualizations as well as code that generates them that answer your question. For each analysis, be sure to walk through thesentire process of model creation, evaluation of assumptions, and evaluation of any statistical tests. Feel free to show when and where you revise your models*
+
+## 4) Discussion
+*What do your results say? Put it all together.*
+*Do your results suggest additional visualizations/analyses? Feel free to conduct them here.*
+*What final conclusion can you draw about your data set?*
+
+
+
+
+

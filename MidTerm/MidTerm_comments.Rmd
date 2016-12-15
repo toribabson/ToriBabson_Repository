@@ -1,0 +1,582 @@
+---
+title: "MidTerm: Tori Babson"
+output: html_document
+---
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(rstanarm)
+library(bbmle)
+library(tidyr)
+library(readr)
+library(purrr)
+library(broom)
+library(ggthemes)
+```
+
+# 1) Sampling your system
+
+<i>How are different fish species distributed in different locations of interest?  </i>
+
+Species counts would be a variable to sample. Counting the number of individuals of the chosen species that are in each location. A 5x5 grid of plots (1m x 1m) could be set up in each location and numbered #1-25. 10 plots would be randomly chosen using a random number generator to avoid any bias or confounding variable. (For example choosing plots next to eachother at every location may seem the most convenient out in the field but defeats the purpose of selecting random plots across a larger grid area. This ensures that any variation in a population is represented by sampling random plots throughout a location. Data should be recorded by at least two different observers at a time. This helps reduce the chance of missing observations if one observer is distracted, and helps ensure accurate counts particularly of schooling fish. This data would most likely be Poisson distributed, since the observations were recorded as counts (all data will be positive integers).
+
+***
+
+# 2) Let's get philosophical.   
+
+I believe I will inevitably become a Bayesian after I have practiced and become more familiar with the methods. I didn't even know there were other techniques outside of the strictly frequentist techniques I learned in school. Additionally, the more I learn about "frequentist alternatives" such as, Bayesian and likelihood approaches, the more I learn how little I really understood what I was doing all the years I looked at nothing but p-values.
+
+Bayesian methods do seem more intuitive and I don't know how any biologist could fail to appreciate Bayesian statistics for the ability to calculate variable parameter estimates. When studying biological processes there will never be one "true" value when life depends so heavily on variation to exist.  A Bayesian 95% CI provides a range in which 95% of the parameter values are contained instead of a range in which there is a 95% chance that the single "true" value is contained. The Bayesian technique gives answers that seem more informative than the frequentist. Another aspect of Bayesian methods that I like is the prior. When starting from scratch a weak prior can be used and avoid any significant influence on the posterior. Human beings learn by making connections between past and new experiences. If we lived without the ability to learn from past experiences, humans would be as functional as infants with only natural instincts like breathing. Thinking logically, the prior is included because that is how we are able to develop intelligent beings, so to learn more from our statistical tests of course we would use any prior information. If a Bayesian and a frequentist learn how to walk and want to learn how to run, only the bayesian would succeed by remembering how to walk first. 
+
+
+***
+
+# 3) Power 
+```{r power, cache=TRUE, warning=FALSE}
+seals <- read_csv('~/Dropbox/Data_Science/Labs/Oct13/data/06/17e8ShrinkingSeals Trites 1996.csv')
+set.seed(607)
+
+##### SAMPLE SIZE, INTERCEPT, SLOPE (and alpha) for varying parameters
+
+# simulation data frame with the parameters and information that varies
+# SAMPLE SIZES, SLOPES
+simPopN <- data.frame(slope = seq(0, 0.005, 0.001),
+                      sigma = 5.6805) %>%
+  crossing(n=seq(5, 65, 10))
+
+# INTERCEPTS
+simPopN <- simPopN %>%
+  crossing(intercept = seq(95, 135, 10))
+
+# ALPHAS
+simPopN <- simPopN %>%
+  crossing(alpha = c(0.001, 0.005, 0.01, 0.05, 0.1, 0.15))
+
+# expand to have a certain number of simulations for eatch sample size
+simPopN <- simPopN %>%
+  group_by(slope, intercept, sigma, n, alpha) %>%
+  expand(reps = 1:n) %>%
+  ungroup()
+
+# simulate each 500 of times
+simPopN <- simPopN %>%
+  crossing(sim = 1:500)
+
+
+## simulate data -just add in fitted values
+# alsosimulate random draws of ages
+simPopN <- simPopN %>%
+  mutate(age.days = runif(n(), 958, 8353)) %>%
+  mutate(length.cm = rnorm(n(), intercept + slope*age.days, sigma))
+
+
+## FIT MODELS AND EXTRACT COEFFICIENTS
+
+# first generate a lot of fit models
+fits <- simPopN %>%
+  group_by(slope, intercept, sigma, n, sim, alpha) %>%
+  nest()
+
+# iterate over diff levels of grouped data frames and perform some funcion
+# we will fit a model, get its coefficients using *broom*
+
+fits <- fits %>%
+    mutate(mod = map(data, ~lm(length.cm ~ age.days, data=.))) %>%
+    mutate(coefs = map(mod, ~tidy(.)))
+
+#cleanup - unnest, which takes list-columns from above, and expands them out as into full data frames that get slotted back into our original data frame
+
+#filter slope coefficient.
+fits <- fits %>%
+  unnest(coefs) %>%
+  ungroup() %>%
+  filter(term == "age.days")
+
+pow <- fits %>%
+    group_by(n, slope, intercept, alpha) %>%
+    summarise(power = 1-sum(p.value>alpha)/n()) %>%
+    ungroup()
+
+ggplot(data = pow, aes(x=slope, y=power, color = factor(alpha))) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.8) +
+  facet_grid(intercept ~ n, labeller = label_both) +
+  labs(title = "Power Analysis", x="Slope", y = "Power") +
+  theme_light(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+***
+
+# 4) Quailing at the Prospect of Linear Models.
+
+### 4.1 Three Fits
+```{r three fits, warning=FALSE}
+quails <- read.csv("~/Dropbox/Data_Science/MidTerm/Morphology data.csv")
+
+# tidy up this column name nonsense
+names(quails) <- c("Bird", "Sex", "Age.days", "Exp.Temp.C", "Mass.g", "Tarsus", "Culmen", "Depth", "Width", "Notes")
+
+# no NAs, please
+quails <- quails %>%
+  filter(!is.na(Culmen)) %>%
+  filter(!is.na(Tarsus))
+
+# plot of how tarsus predicts culmen
+quail_plot <- ggplot(quails, aes(x=Tarsus, y=Culmen))
+
+quail_plot + geom_point() +
+  stat_smooth(method = "lm")
+
+
+
+##########################################
+# LEAST SQUARES
+##########################################
+quails_mod_lm <- lm(Culmen ~ Tarsus, data=quails)
+
+# assumptions
+plot(quails_mod_lm, which=1)
+plot(quails_mod_lm, which=2)
+
+
+
+##########################################
+# LIKELIHOOD
+##########################################
+
+## Start values
+lm_coefs <- coef(lm(Culmen ~ Tarsus, data=quails))
+
+quails_mod_lik <- mle2(Culmen ~ dnorm(b0 + b1*Tarsus, resid_sd),
+                       start = list(b0 = lm_coefs[1], b1 = lm_coefs[2], resid_sd = 4),
+                       data = quails)
+logLik(quails_mod_lik)
+
+#assumptions
+quails_fit <- predict(quails_mod_lik)
+quails_res <- residuals(quails_mod_lik)
+
+qplot(quails_fit, quails_res)
+
+qqnorm(quails_res)
+qqline(quails_res)
+
+#LRT test of model
+quails_mod_lik_null <- mle2(Culmen ~ dnorm(b0 , resid_sd),
+                start = list(b0 = 1, resid_sd = 4),
+                data = quails)
+
+anova(quails_mod_lik, quails_mod_lik_null)  
+### The deviance values for the alternative and null hypotheses are far apart from eachother, confirming that the two are different.       
+
+
+
+##########################################
+# BAYESIAN
+##########################################
+#fit the model
+quail_mod_bayes <- stan_glm(Culmen ~ Tarsus,
+                data = quails, 
+                family=gaussian())
+  
+# INSPECT CHAINS AND POSTERIORS
+plot(quail_mod_bayes, plotfun = "stan_trace")
+plot(quail_mod_bayes, show_density=TRUE)
+
+# INSPECT AUTOCORRELATION
+plot(quail_mod_bayes, plotfun = "stan_ac")
+
+# MODEL ASSUMPTIONS
+quail_fit <- predict(quail_mod_bayes)
+quail_res <- residuals(quail_mod_bayes)
+
+# FIT
+qplot(quail_fit, quail_res)
+pp_check(quail_mod_bayes, check="scatter")
+
+# NORMALITY
+qqnorm(quail_res)
+qqline(quail_res)
+pp_check(quail_mod_bayes, check="residuals", bins=8)
+
+## MATCH TO POSTERIOR
+pp_check(quail_mod_bayes, check="test", test=c("mean", "sd"))
+pp_check(quail_mod_bayes, nreps = 10)
+
+# COEFFS
+summary(quail_mod_bayes, digits=5)
+# CIs
+posterior_interval(quail_mod_bayes)
+
+# VISUALIZE.
+quail_chains <- as.data.frame(quail_mod_bayes)
+
+quail_plot2 <- quail_plot +
+  geom_point() +
+  theme_light(base_family = "Georgia") +
+  geom_abline(intercept=quail_chains[,1], slope = quail_chains[,2], alpha=0.1, color="lightblue") +
+  geom_abline(intercept=coef(quail_mod_bayes)[1], slope = coef(quail_mod_bayes)[2], color="steelblue4")
+
+quail_plot2 +
+  labs(title = "Quail Tarsus(leg) and Culmen(beak) Lengths", x='Tarsus(mm)', y='Culmen(mm)')
+```
+
+
+***
+
+ 
+### 4.2 Three interpretations   
+
+OK, now that we have fits, take a look! Do the coefficients and their associated measures of error in their estimation match? How would we interpret the results from these different analyses differently? Or would we? Note, confint works on lm objects as well.
+```{r interpretations, warning=FALSE}
+#LEAST SQUARES
+summary(quails_mod_lm)
+
+#LIKELIHOOD
+summary(quails_mod_lik)
+anova(quails_mod_lik, quails_mod_lik_null)
+
+#BAYESIAN
+summary(quail_mod_bayes, digits=5)   
+
+### The coeffeicients and errors values are very similar. All values are within 0.006 of eachother. 
+### While the values may be close the results produced using each of the three techniques is interpreted slightly differently.   
+
+
+
+##############################
+# 95% CONFIDENCE INTERVALS:
+##############################
+
+# LEAST SQUARES
+confint(quails_mod_lm)
+# We are 95% confident that the true intercept value lies between -0.5216505 and 0.3242363.
+# We are 95% confident that the true slope value lies between 0.3598809 and 0.3859727.
+
+# LIKELIHOOD
+confint(quails_mod_lik)
+# The 95% confidence interval for intercept is -0.5209627 < b0 < 0.3235484.
+# The 95% confidence interval for slope is 0.3599021 < b1 < 0.3859515
+
+# BAYESIAN
+posterior_interval(quail_mod_bayes, prob = 0.95)
+# We believe that 95% of the possible intercept values are between -0.5071446 and 0.3175814.
+# We believe that 95% of the possible slope values are between 0.3599874 and 0.3853405.
+```
+
+***
+
+### *4.3 Every Day I’m Profilin’*
+Generate the profile 95% and 75% confidence intervals by Brute Force for the slope and intercept from the Likelihood model. Note, to do this, you will need to refit some models and use the fixed argument with mle2 (e.g., fixed = c(b0 = 3). Check yourself against the confint results from the mle2 fit. The logLik function will help you out to extract log likelihoods from fit models. Plot the profiles along with reporting the values of the CIs.
+```{r CIs by brute force, cache=TRUE, warning=FALSE}
+set.seed(603)
+confint(quails_mod_lik)
+
+# MAX LOG LIKELIHOOD
+peak <- logLik(quails_mod_lik)
+
+
+CI_fun <- function(mod, peak, CI_range_value) {
+  logLik_value <- logLik(mod)
+  if(logLik_value >= (peak - CI_range_value) & logLik_value <= (peak + CI_range_value)){return("within_CI")}
+  if(logLik_value < (peak - CI_range_value)){return("outside_CI")}
+  if(logLik_value > (peak + CI_range_value)){return("outside_CI")}
+}
+
+
+logLik_fun <- function(int_val){
+  int_mod_x <- mle2(Culmen ~ dnorm(b0 + b1*Tarsus, resid_sd),
+                       start = list(b0 = lm_coefs[1], b1 = lm_coefs[2], resid_sd = 4), fixed = c(b0=int_val),
+                       data = quails)
+  return(logLik(int_mod_x))
+}
+
+
+logLik_fun2 <- function(slope_val){
+  int_mod_x <- mle2(Culmen ~ dnorm(b0 + b1*Tarsus, resid_sd),
+                       start = list(b0 = lm_coefs[1], b1 = lm_coefs[2], resid_sd = 4), fixed = c(b1=slope_val),
+                       data = quails)
+  return(logLik(int_mod_x))
+}
+
+
+
+##############################
+# INTERCEPT VALUES
+##############################
+intercept_values <- seq(-0.6, 0.4, by = 0.1)
+
+########## 95% CI ##########
+
+CI_fun(logLik_fun(-0.6), peak, 1.92) #outside 95 CI
+# within 95% CI
+CI_fun(logLik_fun(-0.5), peak, 1.92)
+CI_fun(logLik_fun(-0.4), peak, 1.92)
+CI_fun(logLik_fun(-0.3), peak, 1.92)
+CI_fun(logLik_fun(-0.2), peak, 1.92)
+CI_fun(logLik_fun(-0.1), peak, 1.92)
+CI_fun(logLik_fun(0.0), peak, 1.92)
+CI_fun(logLik_fun(0.1), peak, 1.92)
+CI_fun(logLik_fun(0.2), peak, 1.92)
+CI_fun(logLik_fun(0.3), peak, 1.92)
+
+CI_fun(logLik_fun(0.4), peak, 1.92) #outside 95 CI
+
+
+########## 75% CI ##########
+
+CI_fun(logLik_fun(-0.5), peak, 0.66) # outside 75 CI
+CI_fun(logLik_fun(-0.4), peak, 0.66) # outside 75 CI
+# within 75% CI
+CI_fun(logLik_fun(-0.3), peak, 0.66)
+CI_fun(logLik_fun(-0.2), peak, 0.66)
+CI_fun(logLik_fun(-0.1), peak, 0.66)
+CI_fun(logLik_fun(0.0), peak, 0.66)
+CI_fun(logLik_fun(0.1), peak, 0.66)
+
+CI_fun(logLik_fun(0.2), peak, 0.66) # outside 75 CI
+CI_fun(logLik_fun(0.3), peak, 0.66) # outside 75 CI
+
+
+# intercept and log lik values in a data frame
+intercepts <- data.frame(intercept_val = c(seq(-0.8, 0.6, by = 0.1)),
+                         log_likelihood = c(logLik_fun(-0.8),
+                                            logLik_fun(-0.7),
+                                            logLik_fun(-0.6),
+                                            logLik_fun(-0.5),
+                                            logLik_fun(-0.4),
+                                            logLik_fun(-0.3),
+                                            logLik_fun(-0.2),
+                                            logLik_fun(-0.1),
+                                            logLik_fun(0),
+                                            logLik_fun(0.1),
+                                            logLik_fun(0.2),
+                                            logLik_fun(0.3),
+                                            logLik_fun(0.4),
+                                            logLik_fun(0.5),
+                                            logLik_fun(0.6)
+                                            ))
+
+# VISUALIZE
+ggplot(intercepts, aes(x=intercept_val, y=log_likelihood)) +
+  geom_point() +
+  stat_smooth() +
+  geom_hline(yintercept = -1251.602) +
+  geom_hline(yintercept = -1250.342)
+   
+
+
+##############################
+# SLOPE VALUES
+##############################
+
+########## 95% CI ##########
+
+CI_fun(logLik_fun2(0.3), peak, 1.92) # outside 95% CI
+CI_fun(logLik_fun2(0.31), peak, 1.92)# outside 95% CI
+CI_fun(logLik_fun2(0.32), peak, 1.92)# outside 95% CI
+CI_fun(logLik_fun2(0.33), peak, 1.92)# outside 95% CI
+CI_fun(logLik_fun2(0.34), peak, 1.92)# outside 95% CI
+CI_fun(logLik_fun2(0.35), peak, 1.92)# outside 95% CI
+
+CI_fun(logLik_fun2(0.36), peak, 1.92)
+CI_fun(logLik_fun2(0.37), peak, 1.92)
+CI_fun(logLik_fun2(0.38), peak, 1.92)
+
+CI_fun(logLik_fun2(0.39), peak, 1.92)# outside 95% CI
+CI_fun(logLik_fun2(0.4), peak, 1.92)# outside 95% CI
+
+
+########## 75% CI ##########
+
+CI_fun(logLik_fun2(0.36), peak, 0.66)# outside 75% CI
+
+CI_fun(logLik_fun2(0.37), peak, 0.66)
+CI_fun(logLik_fun2(0.38), peak, 0.66)
+
+CI_fun(logLik_fun2(0.39), peak, 0.66)# outside 75% CI
+
+
+# slope and log lik values in a data frame
+slopes <- data.frame(slope_vals = c(seq(0.35, 0.4, by = 0.005)),
+                         log_likelihood = c(logLik_fun2(0.35),
+                                            logLik_fun2(0.355),
+                                            logLik_fun2(0.36),
+                                            logLik_fun2(0.365),
+                                            logLik_fun2(0.37),
+                                            logLik_fun2(0.375),
+                                            logLik_fun2(0.38),
+                                            logLik_fun2(0.385),
+                                            logLik_fun2(0.39),
+                                            logLik_fun2(0.395),
+                                            logLik_fun2(0.4)
+                                            ))
+
+ggplot(slopes, aes(x=slope_vals, y=log_likelihood)) +
+  geom_point() +
+  stat_smooth() +
+  geom_hline(yintercept = -1251.602) +
+  geom_hline(yintercept = -1250.342)
+```
+
+***
+   
+### 4.4 The Power of the Prior   
+
+```{r power of prior, cache = TRUE}
+set.seed(603)
+# FIT MODEL WITH SET PRIOR
+quail_mod_bayes_prior <- stan_glm(Culmen ~ Tarsus,
+                data = quails, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+summary(quail_mod_bayes_prior, digits = 5)
+
+#VISUALIZE fit still similar to weak prior
+quail_chains_prior <- as.data.frame(quail_mod_bayes_prior)
+
+quail_plot2 +
+  #FLAT PRIOR *(already saved in plot2)*
+  # geom_abline(intercept=quail_chains[,1], slope = quail_chains[,2], alpha=0.1, color="lightblue") +
+  # geom_abline(intercept=coef(quail_mod_bayes)[1], slope = coef(quail_mod_bayes)[2], color="steelblue4") +
+   #STRONG PRIOR
+  geom_abline(intercept=quail_chains_prior[,1], slope = quail_chains_prior[,2], alpha=0.1, color="khaki1") +
+  geom_abline(intercept=coef(quail_mod_bayes_prior)[1], slope = coef(quail_mod_bayes_prior)[2], color="khaki4") +
+  geom_label(aes(label = "Flat Prior", x=18, y=9), color = "steelblue4", fill = "lightblue", alpha = 0.1, size = 4, label.size = 0, fontface = "italic") +
+  geom_label(aes(label = "Strong Prior", x=22, y=5), color = "khaki4", fill = "khaki1", alpha=0.1, size = 4, label.size = 0, fontface = "italic") +
+  labs(title = "Flat vs Strong Prior", x='Tarsus(mm)', y='Culmen(mm)')
+
+
+
+##############################
+# A VERY SMALL SAMPLE SIZE
+##############################
+sample_size_20 <- quails[sample(1:nrow(quails), 20,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_20 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_20, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+#coefficients
+summary(quail_mod_bayes_prior_20, digits=5)
+
+#### DOES include 0.4 in the 95% credible interval 
+
+
+##############################
+# TRY SAMPLE SIZES
+##############################
+
+
+###### N = 500 ##############
+sample_size_500 <- quails[sample(1:nrow(quails), 500,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_500 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_500, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+#coefficients
+summary(quail_mod_bayes_prior_500, digits=5)
+
+#### sample size of 500 inclues 0.4
+
+
+###### N = 600 ###############
+sample_size_600 <- quails[sample(1:nrow(quails), 600,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_600 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_600, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+#coefficients
+summary(quail_mod_bayes_prior_600, digits=5)
+
+#### sample size of 600 includes 0.4
+
+
+###### N = 650 ##############
+sample_size_650 <- quails[sample(1:nrow(quails), 650,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_650 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_650, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+#coefficients
+summary(quail_mod_bayes_prior_650, digits=5)
+
+#### sample size of 650 STILL includes 0.4
+
+
+###### N = 660 ##############
+sample_size_660 <- quails[sample(1:nrow(quails), 660,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_660 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_660, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+#coefficients
+summary(quail_mod_bayes_prior_660, digits=5)
+
+### 660 STILL includes 0.4
+
+
+###### N = 665 ##############
+sample_size_665 <- quails[sample(1:nrow(quails), 665,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_665 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_665, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+#coefficients
+summary(quail_mod_bayes_prior_665, digits=5)
+
+#### sample size of 665 STILL include 0.4
+
+
+###### N = 667 ##############
+sample_size_667 <- quails[sample(1:nrow(quails), 667,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_667 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_667, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+#coefficients
+summary(quail_mod_bayes_prior_667, digits=5)
+
+#### sample size of 667 STILL includes 0.4
+
+
+###### N = 668 ##############
+sample_size_668 <- quails[sample(1:nrow(quails), 668,
+  	replace=FALSE),]
+
+quail_mod_bayes_prior_668 <- stan_glm(Culmen ~ Tarsus,
+                data = sample_size_668, 
+                family=gaussian(),
+                prior = normal(0.4,0.01))
+
+#coefficients
+summary(quail_mod_bayes_prior_668, digits=5)
+
+#### sample size of 668 does NOT include 0.4
+
+
+######## A sample size of 667 starts to include 0.4 in the 95% confidence interval. A sample size of 668 does not.
+```
+
+***

@@ -1,0 +1,11 @@
+base
+ggplot2
+dplyr
+Rcpp
+rstanarm
+bbmle
+tidyr
+readr
+purrr
+broom
+ggthemes

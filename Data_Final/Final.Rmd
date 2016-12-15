@@ -1,0 +1,837 @@
+---
+title: "Final Project"
+output: html_document
+---
+
+### Introduction
+Blood gas parameters are often measured to assess the health a fish (as well as many other creatures). These parameters are known to be affected by many different processes such as stress hormone concentration in the blood. Knowing blood gas values in the blood of a fish can provide a lot of information about that animal and its environment. When collecting blood samples from animals in the field it is not always possible to run the blood tests immediately after they are taken. This is often a problem when sampling fish or other aquatic organisms only accessible by boat. In this case, there is a time delay between collecting the sample, getting from that location to a landing location, and then to a testing facility to finally test the sample. We want to find out if any of these parameters being tested change significantly between time of sample collection and time of sample testing. If there are changes, the accuracy of the blood sample tests may be compromised. 
+Interest in accuracy is also the motivation to test the differences in values when different syringe types (plastic/glass) are used. If there is a difference in any of the parameters between syringe types then this needs to be considered when sampling blood and making sure the same syringe type is used for every sample collected to ensure there is no confounding variable added.
+
+
+In 2013, ten Cownose rays *(R. bonasus)* from the shark and ray touch tank at the New England Aquarium were opportunistically selected for blood sampling during their routine spine clipping. Each blood sample was repeatedly analyzed at fixed intervals in order to 1) monitor the changes in blood acid-base parameters as a function of time, and 2) observe the difference in these values between different syringe types. Also in 2013, ten Red-eared sliders *(T. elegans)* were selected from Rainforest Reptile Shows in Beverly, Massachusetts for blood sampling. 
+
+> 1) Do any of these blood gas parameters (lactate, pH, pCO2, or pO2), change significantly over a 90-minute time period after collection?    
+> 2) Does syringe type (plastic or glass) affect how each value changes over time?
+
+#### Overview of the temperature-corrected data:  
+```{r "Data Overview", echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+rays_gath <- read.csv('~/Dropbox/Blood_Gas_Project/Data/rays/rays_gathered.csv')
+
+ggplot(data = rays_gath, aes(x=Time, y=Value, color=factor(Ray), by=Ray)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(Variable ~ Syringe, scales = "free") +
+  xlab("Time (minutes)") +
+  ggtitle("Blood Gas Data With Two Syringe Types for Rays Over Time")
+
+
+sliders_gath <- read.csv('~/Dropbox/Blood_Gas_Project/Data/turtles/sliders_gathered.csv')
+
+ggplot(data = sliders_gath, aes(x=Time, y=Value, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~Variable, scales = "free") +
+  xlab("Time (minutes)") +
+  ggtitle("Blood Gas Data for Turtles Over Time")
+```
+
+**Note:** Temperature Corrections  
+Values for the turtle blood samples were temperature corrected to individual internal temperatures using the following equations. This was done in order to control for differences in the sample temperature from the internal temperature of the animals. The data from the turtle samples uses the temperature of the sample and using the difference in the sample temperature when tested from the original internal temperature reading of the turtle to correct the data so that the values properly reflect the internal temperature of the animal. Temperature corrections for pCO2 and pO2 were validated for Kemp’s Ridley turtles by Keller et al. (2012), while pH corrections were validated for *T. elegans*, formerly known as Pseudemys scripta elegans at the time of publication by Robin (1962).  
+
+<center> pH<sub>TC</sub> = (0.0144*∆ T) + pH </center>  
+
+<center> pCO<sub>2TC</sub> = pCO<sub>2</sub> * 10<sup>(-0.019 * ∆T)</sup> </center>  
+
+<center> pO<sub>2TC</sub> = pO<sub>2</sub>*10<sup>(-0.0058 *∆T)</sup></center>
+  
+  *** 
+  
+CNR blood sample values were temperature corrected to 25°C using the following equations validated for smooth dogfish *(Mustelus canis)* by Gallagher et al. (2010)  
+
+<center> pH<sub>25°C</sub> = 0.795(±0.06)pH<sub>i-STAT</sub> + 1.797(±0.42) </center>  
+
+<center> pCO<sub>2 25°C</sub> = 0.173(±0.01)pCO<sub>2 i-STAT</sub> + 0.775(±0.19)</center>  
+
+<center> pO<sub>2 25°C</sub> = 0.572(±0.03)pO<sub>2 i-STAT</sub> - 1.449(±3.56)</center>  
+
+***
+
+### Methods  
+
+The raw data was formatted as 10 separate tables for each animal (for both rays and turtles), so there was a significant amount of reformatting and data tidying to be done.  
+
+#### The Tidying Journey to Clean Data
+The formatting of both the turtle and ray values were pretty much the same except for an added variable of syringe type in the ray data. So the initial steps of coding are fairly similar. The ray and turtle data were both in wide format, however with each animal being considered as a variable it needs to be in long format. This also is necessary to work with ggplot as well as the statistical testing code.  
+
+
+
+##### Turtle Data Tidying
+```{r Turtle, warning=FALSE, message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(knitr) #new package
+
+# Load the raw ugly data.
+sliders <- read_excel('~/Dropbox/Blood_Gas_Project/Data/BG_data_SLIDERS.xlsx', skip = 0)
+
+# First work with only one chunk(turtle) at a time. Chop off the rest of the data frame.
+sliders_1 <-sliders[1:9, 1:8]
+```
+
+###### Below is a glimpse at what the raw data for the first turtle looked like before tidying:
+```{r Turtle Tidy, warning=FALSE, message=FALSE}
+kable(sliders_1)
+
+# Assign column names (most unnamed).
+names(sliders_1) <- c("Turtle", "Value", "T0", "T1", "T2", "T3", "T4", "T5")
+
+# Separate meta data labels and values into two columns for "Meta"(label) and "Data"(value).
+sliders_1 <- separate(data = sliders_1, col = "Turtle", into = c("Meta", "Data"), sep = ": ")
+
+# Save the meta data in its own data frame to add back to main data frame after further tidying and remove from table for now.
+meta_data_sliders <- data.frame(sliders_1[1:4, 1:2])
+sliders_1 <- sliders_1[1:9,3:9]
+sliders_1 <- sliders_1[-1,]
+
+# Time to transpose the data from wide to long format to make analysis easier.
+sliders_1 <- t(sliders_1)
+sliders_1 <- as.data.frame(sliders_1, stringsAsFactors = FALSE)
+
+# Add a time column, remove row names, and fix the column names.
+sliders_1$Time <- gsub("Value", "Time", rownames(sliders_1))
+rownames(sliders_1) <- NULL
+names(sliders_1) <- sliders_1[1,1:9]
+sliders_1 <- sliders_1[-1,]
+
+# Transpose and format that meta data we put aside.
+meta_data_sliders <- t(meta_data_sliders)
+meta_data_sliders <- as.data.frame(meta_data_sliders, stringsAsFactors = FALSE)
+
+# Correct the column names and clear unnecssary row names in meta data.
+names(meta_data_sliders) <- meta_data_sliders[1,1:4]
+meta_data_sliders <- meta_data_sliders[-1,]
+rownames(meta_data_sliders) <- NULL
+
+# Convert turtle, temp, and weight values to numeric.
+meta_data_sliders$`Turtle` <- as.numeric(meta_data_sliders$`Turtle`)
+
+meta_data_sliders$`Internal Temp` <- as.numeric(gsub("\\sC", "",
+                                          meta_data_sliders$`Internal Temp`))
+meta_data_sliders$`Weight` <- as.numeric(gsub("\\sg", "",
+                                              meta_data_sliders$`Weight`))
+
+# Put meta data back onto main data frame.
+complete_sliders <- data.frame(sliders_1, meta_data_sliders)
+```
+
+###### After data tidying:
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+complete_sliders2 <- complete_sliders
+complete_sliders2$HCO3 <- as.numeric(complete_sliders2$HCO3)
+complete_sliders2$pH <- as.numeric(complete_sliders2$pH)
+
+kable(complete_sliders2, digits = 4)
+``` 
+
+***
+
+  
+###### Function to transform/tidy as well as rbind the rest of the turtles
+```{r Turtle Function, warning=FALSE, message=FALSE}
+# FUNCTION:
+
+read_sliders_transform <- function(turtle_number){
+  #file name
+  filename <- paste0('~/Dropbox/Blood_Gas_Project/Data/BG_data_SLIDERS.xlsx')
+  
+  #read in per turtle
+  sliders <- read_excel(filename, skip = turtle_number*10-10)
+  
+  #only one turtle at a time
+  sliders_1 <-sliders[1:9, 1:8]
+  
+  #rename columns
+  names(sliders_1) <- c("Turtle", "Value", "T0", "T1", "T2", "T3", "T4", "T5")
+  
+  #separate meta data into two columns
+  sliders_1 <- separate(data = sliders_1, col = "Turtle", into = c("Meta", "Data"), sep = ": ")
+  
+  #save meta data as a new data frame
+  meta_data_sliders <- data.frame(sliders_1[1:4, 1:2])
+  
+  #get rid of extra rows and columns
+  sliders_1 <- sliders_1[2:9,3:9]
+  
+  #transpose
+  sliders_1 <- t(sliders_1)
+  
+  #get rid of factors
+  sliders_1 <- as.data.frame(sliders_1, stringsAsFactors = FALSE)
+  
+  #add time column and rename value
+  sliders_1$Time <- gsub("Value", "Time", rownames(sliders_1))
+  
+  #rename columns
+  names(sliders_1) <- sliders_1[1,1:9]
+  
+  # remove first row
+  sliders_1 <- sliders_1[-1,]
+  
+  # TRANSPOSE AND FORMAT META DATA
+  meta_data_sliders <- t(meta_data_sliders)
+  meta_data_sliders <- as.data.frame(meta_data_sliders, stringsAsFactors = FALSE)
+  
+  # correct column names
+  names(meta_data_sliders) <- meta_data_sliders[1,1:4]
+  meta_data_sliders <- meta_data_sliders[-1,]
+  
+  #clear row names
+  rownames(meta_data_sliders) <- NULL
+  
+  # Make variables numeric and remove extra characters
+  meta_data_sliders$`Turtle` <- as.numeric(meta_data_sliders$`Turtle`)
+  meta_data_sliders$`Internal Temp` <- as.numeric(gsub("\\sC", "", meta_data_sliders$`Internal Temp`))
+  meta_data_sliders$`Weight` <- as.numeric(gsub("\\sg", "", meta_data_sliders$`Weight`))
+  
+  #add meta data back to data frame
+  complete_sliders2 <- data.frame(sliders_1, meta_data_sliders)
+  
+  #rbind to compelte data frame
+  complete_sliders <- rbind(complete_sliders, complete_sliders2)
+  return(complete_sliders)
+}
+  
+# Run above function for turtles 2 through 10 to create compelte new data frame.
+for(i in 2:10){
+  complete_sliders <- read_sliders_transform(i)
+}
+
+# The variables pH, pCO2, and pO2 need to be numeric for necessary temperature corrections.
+complete_sliders$pH <- as.numeric(complete_sliders$pH)
+complete_sliders$PCO2 <- as.numeric(complete_sliders$PCO2)
+complete_sliders$PO2 <- as.numeric(complete_sliders$PO2)
+
+# Temperature corrections according to validated equations cited in the introduction.
+complete_sliders$temp_change <- (37 - complete_sliders$Internal.Temp)
+complete_sliders$pH <- ((0.0144*complete_sliders$temp_change) + complete_sliders$pH)
+complete_sliders$PCO2 <- (complete_sliders$PCO2*(10^-0.019*complete_sliders$temp_change))
+complete_sliders$PO2 <- (complete_sliders$PO2*(10^-0.0058*complete_sliders$temp_change))
+
+# Filter NAs in pH 
+  #(no values for turtle 3 at T4, removes whole row of NAs)
+complete_sliders <- complete_sliders %>%
+  filter(!is.na(pH))
+
+# Convert time to numeric values (in minutes) because the T0-T5 integers are not constant.
+complete_sliders$Time <- gsub("T0", 0, complete_sliders$Time)
+complete_sliders$Time <- gsub("T1", 5, complete_sliders$Time)
+complete_sliders$Time <- gsub("T2", 10, complete_sliders$Time)
+complete_sliders$Time <- gsub("T3", 15, complete_sliders$Time)
+complete_sliders$Time <- gsub("T4", 45, complete_sliders$Time)
+complete_sliders$Time <- gsub("T5", 90, complete_sliders$Time)
+
+# Make time numeric.
+complete_sliders$Time <- as.numeric(complete_sliders$Time)
+```
+
+```{r Save, eval=FALSE}
+# Newly tidy data was saved as a csv file
+write.csv(tidy_sliders, file = 'tidy_turtle_data.csv')
+```
+
+***
+
+##### Ray Data Tidying
+```{r Ray, warning=FALSE, message=FALSE}
+# Load that ridiculous data!
+rays <- read_excel('~/Dropbox/Blood_Gas_Project/Data/BG_data_RAYS.xlsx', skip = 0)
+
+# As before, work with only one ray to start.
+rays_1 <- rays[1:10,1:14]
+```
+
+###### Before data tidying:
+```{r Ray Tidy}
+kable(rays_1)
+
+
+# Separate meta data and labels (all columns must be named first).
+  # The label "Time" will make sense after transposing data.
+names(rays_1) <- c("Ray", "Time", "T0", "T0", "T1", "T1", "T2", "T2", "T3", "T3", "T4", "T4", "T5", "T5")
+
+rays_1 <- separate(data = rays_1, col = "Ray", into = c("Meta", "Data"), sep = ": ")
+
+# Save meta data in its own data frame for later.
+meta_data_rays <- data.frame(rays_1[1:4,1:2])
+
+# Take meta data out of main data frame.
+rays_1 <- rays_1[1:10,3:15]
+
+# Put col names in first row so they become a new column after transposing instead of just row names.
+rays_1[1,] <- names(rays_1)
+
+# Transpose from wide to long.
+rays_1 <- t(rays_1)
+rays_1 <- as.data.frame(rays_1, stringsAsFactors = FALSE)
+
+# Use row 1 to rename columns and clear row names.
+names(rays_1) <-rays_1[1,]
+rays_1 <- rays_1[-1,]
+row.names(rays_1) <- NULL
+
+# Transpose meta data.
+meta_data_rays <- t(meta_data_rays)
+meta_data_rays <- as.data.frame(meta_data_rays, stringsAsFactors = FALSE)
+
+# Correct column names and clear row name in meta data.
+names(meta_data_rays) <- meta_data_rays[1,1:4]
+meta_data_rays <- meta_data_rays[-1,]
+row.names(meta_data_rays) <- NULL
+
+# Pit number(each ray's unique ID number), weight and wingspan in meta data should be converted to numeric.
+meta_data_rays$Pit_Num <- as.numeric(meta_data_rays$Pit_Num)
+
+meta_data_rays$Weight <- as.numeric(gsub("\\skg", "", meta_data_rays$Weight))
+
+meta_data_rays$Wingspan <- as.numeric(gsub("\\scm", "", meta_data_rays$Wingspan))
+
+# Put meta data back in main data frame.
+complete_rays <- data.frame(rays_1, meta_data_rays)
+```
+After data tidying:
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+complete_rays2 <- complete_rays
+complete_rays2$Lac <- as.numeric(complete_rays2$Lac)
+complete_rays2$pH <- as.numeric(complete_rays2$pH)
+kable(complete_rays2)
+
+```
+
+
+***
+###### Function to tidy ray data and combine to one clean data frame.  
+```{r Ray function, warning=FALSE, message=FALSE}
+read_rays_transform <- function(ray_number){
+    
+  #file name
+  filename <- paste0('~/Dropbox/Blood_Gas_Project/Data/BG_data_RAYS.xlsx')
+  
+  #read in each ray
+  rays <- read_excel(filename, skip = ray_number*11-11)
+  
+  #one ray at a time
+  rays_1 <- rays[1:10,1:14]
+  
+  #separate meta data and labels (all columns must be named first)
+  names(rays_1) <- c("Ray", "Time", "T0", "T0", "T1", "T1", "T2", "T2", "T3", "T3", "T4", "T4", "T5", "T5")
+  
+  rays_1 <- separate(data = rays_1, col = "Ray", into = c("Meta", "Data"), sep = ": ")
+  
+  #save meta data in its own data frame
+  meta_data_rays <- data.frame(rays_1[1:4,1:2])
+  
+  #take meta data out of main data frame
+  rays_1 <- rays_1[1:10,3:15]
+  
+  #put col names in first row so they become a new column after transposing instead of just row names
+  rays_1[1,] <- names(rays_1)
+  
+  #transpose
+  rays_1 <- t(rays_1)
+  rays_1 <- as.data.frame(rays_1, stringsAsFactors = FALSE)
+  
+  #use row 1 to rename columns and clear row names
+  names(rays_1) <-rays_1[1,]
+  rays_1 <- rays_1[-1,]
+  row.names(rays_1) <- NULL
+  
+  #transpose meta data
+  meta_data_rays <- t(meta_data_rays)
+  meta_data_rays <- as.data.frame(meta_data_rays, stringsAsFactors = FALSE)
+  
+  # correct column names, clear row name in meta data
+  names(meta_data_rays) <- meta_data_rays[1,1:4]
+  meta_data_rays <- meta_data_rays[-1,]
+  row.names(meta_data_rays) <- NULL
+  
+  # pit number, weight and wingspan in meta data as numeric
+  meta_data_rays$Pit_Num <- as.numeric(meta_data_rays$Pit_Num)
+
+  meta_data_rays$Weight <- as.numeric(gsub("\\skg", "", meta_data_rays$Weight))
+
+  meta_data_rays$Wingspan <- as.numeric(gsub("\\scm", "", meta_data_rays$Wingspan))
+
+  #put meta data back in main data frame
+  complete_rays2 <- data.frame(rays_1, meta_data_rays)
+  
+  #add to complete data frame
+  complete_rays <- rbind(complete_rays, complete_rays2)
+  return(complete_rays)
+}
+
+
+# Run above function for rays 2 through 10 to rbind all rays together.
+for(i in 2:10){
+  complete_rays <- read_rays_transform(i)
+}
+
+# Cut out non-focal variables.
+complete_rays <- complete_rays[,-c(3:6)]
+
+# Filter out rows with NAs for all 4 variables (Lac, PO2, PCO2, and pH).
+complete_rays <- complete_rays[!with(complete_rays,is.na(Lac)& is.na(PO2)& is.na(PCO2)& is.na(pH)),]
+
+# Convert time to numeric values (in minutes) again, for accurate data since they are not constant times apart.
+complete_rays$Time <- gsub("T0", 0, complete_rays$Time)
+complete_rays$Time <- gsub("T1", 5, complete_rays$Time)
+complete_rays$Time <- gsub("T2", 10, complete_rays$Time)
+complete_rays$Time <- gsub("T3", 15, complete_rays$Time)
+complete_rays$Time <- gsub("T4", 45, complete_rays$Time)
+complete_rays$Time <- gsub("T5", 90, complete_rays$Time)
+
+# Must convert pH, pCO2, and PO2 to numeric for temperature corrections.
+complete_rays$pH <- as.numeric(complete_rays$pH)
+complete_rays$PCO2 <- as.numeric(complete_rays$PCO2)
+complete_rays$PO2 <- as.numeric(complete_rays$PO2)
+complete_rays$Lac <- as.numeric(complete_rays$Lac)
+
+# Temperature corrections (equations cited in introduction).
+complete_rays$pH <- (0.795*complete_rays$pH) + 1.797
+complete_rays$PCO2 <- (0.173*complete_rays$PCO2) + 0.775
+complete_rays$PO2 <- (0.572*complete_rays$PO2) - 1.449
+```
+```{r, eval=FALSE}
+# Save data frame as a clean csv file.
+write.csv(complete_rays, file = 'tidy_ray_data.csv')
+```
+
+***
+#### Visualizations and Analyses 
+To answer the first question, (if any of the variables change over time), each of the four variables (Lac, pH, pCO2, pO2) were plotted against time and linear regression was used to test if there is significant change over time for each variable. The null hypothesis was that the slope is zero and there is no significant change over time. The alternative hypothesis was that the slope was different than zero, and there was a change in that variable over time. Where blood gas values changed significantly over time, regression lines were included.
+  
+As for the second question, (does syringe type affect how each value changes over time), will be answered by testing each variable with paired data (where the same ray at the same time point has data for both syringes) with an anova test.The null hypothesis is that the slopes of the two syringe types is the same, and there is no affect on how the value changes over time. The alternative hypothesis is that the slopes of the different syringe types are different, and therefore does affect how the value changes over time. 
+
+
+***
+
+### Results  
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+sliders <- read.csv('~/Dropbox/Blood_Gas_Project/Data/turtles/tidy_turtle_data.csv', stringsAsFactors = FALSE)
+sliders$TCO2 <- as.numeric(sliders$TCO2)
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+# First need to take out non numeric values in that column (<0.3).
+sliders$Lac <- as.numeric(sliders$Lac)
+
+# Make a new data frame with NAs removed for this test (so data for other variables is not deleted).
+sliders_lac <- sliders %>%
+  filter(!is.na(Lac))
+```
+
+#### Lac (turtles)  
+```{r Lac turtles, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=Lac, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ylab("Lac (mmol*L^-1") +
+  ggtitle("Turtles: Lac vs. Time")
+
+# Linear regression
+Lac_mod <- lm(Lac ~ Time, data =  sliders_lac)
+summary(Lac_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(Lac_mod, which = 1)
+plot(Lac_mod, which = 2)
+```
+
+***
+
+ The very high p-value (0.708), means we fail to reject the null hypothesis that there is no differece in lactate values over time. The qqplot shows some skew at the tails, this data may not be perfectly linear, however for our purposes it is acceptable.
+
+***
+
+```{r,warning=FALSE, message=FALSE, echo=FALSE}
+# (Tried transforming data to be more linear)
+ #log
+Lac_mod2 <- lm(log(Lac) ~ Time, data =  sliders_lac)
+summary(Lac_mod2)
+plot(Lac_mod2, which = 2)
+
+### No improvement shown from log transformation.
+```
+
+***
+
+#### pH (turtles)  
+```{r ph turtles, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=pH, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Turtles: pH vs. Time")
+
+# Linear regression
+ph_mod <- lm(pH ~ Time, data = sliders)
+summary(ph_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(ph_mod, which = 1)
+plot(ph_mod, which = 2)
+```
+
+***
+
+This qq plot shows the same skewed pattern at the end of the line that was seen with lac variable and the regression vs fitted also shows a pattern at the end of the line. However the regression test showed a very low p value (0.00583).We can reject the null hypothess that there is no difference in pH over time in favor of the alternative hypothesis that pH does change significantly over time. 
+
+***
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=pH)) +
+  geom_point() +
+  stat_smooth(method = lm) +
+  geom_text(mapping = aes(x=75, y=8.1, label = "y = 7.958 + -0.001 x"), size=5) +
+  xlab("Time (minutes)") +
+  ggtitle("Turtles: pH vs. Time")
+```
+
+***
+
+#### pCO2 (turtles)
+```{r pco2 turtles, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=PCO2, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()+
+  xlab("Time (minutes)") +
+  ggtitle("Turtles: pCO2 vs. Time")
+
+# Linear regression 
+pco2_mod <- lm(PCO2 ~ Time, data = sliders)
+summary(pco2_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(pco2_mod, which = 1)
+plot(pco2_mod, which = 2)
+```
+
+***
+
+The p-value is high at 0.2703, so this test suggests we cannot reject the null that there is no significant change over time. Assumptions again show some skew in the qqplot. 
+
+***
+
+#### pO2 (turtles)
+```{r po2 turtles, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=PO2, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Turtles: pO2 vs. Time")
+
+# Graph looks like log transforming PO2 would make it more linear.
+ggplot(data = sliders, aes(x=Time, y=log(PO2), color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Turtles: pO2 vs. Time")
+
+# Definitely looks more linear.  
+  
+# Linear regression
+PO2_mod <- lm(log(PO2) ~ Time, data =  sliders)
+summary(PO2_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(PO2_mod, which = 1)
+plot(PO2_mod, which = 2)
+```
+
+***
+
+The low p-value of 9.4e-08 is defnitely low enough to reject the null hypothess that there is no difference in pO2 over time in favor of the alternative hypothesis that pO2 does change significantly over time. The two assumptions are met that this data set fits the linear model and the residuals vs fitted plot looks fairly straight. 
+
+***
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=log(PO2))) +
+  geom_point() +
+  stat_smooth(method = "lm") +
+    geom_text(mapping = aes(x=20, y=7.25, label = "y = 5.881 + 0.008 x"), size=5) +
+  xlab("Time (minutes)") +
+  ggtitle("Turtles: pO2 vs. Time")
+
+```
+
+***
+
+***
+
+### Rays
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+rays <- read.csv('~/Dropbox/Blood_Gas_Project/Data/rays/focal_ray_data.csv', stringsAsFactors = FALSE)
+
+library(car)
+```
+
+
+#### Lac (rays)
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=Lac, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  ylab("Lac (mmol*L^-1)") +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: Lac vs. Time")
+
+#Linear regression
+ray_Lac_mod <- lm(Lac ~ Time, data =  rays)
+summary(ray_Lac_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(ray_Lac_mod, which = 1)
+plot(ray_Lac_mod, which = 2)
+```
+
+***
+
+Very high p-value, we fail to reject the null hypothesis that there is no change in lactate over time. The qqplot shows a slightly "s" shaped pattern at the tails.
+
+***
+
+#### pH (rays)
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=pH, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pH vs. Time")
+
+# Something seemed to have happened to ray 130 at 10 minutes, where the pH plummets and then goes right back up. This may indicate some kind of reading error.
+
+# Linear regression
+ray_ph_mod <- lm(pH ~ Time, data =  rays)
+summary(ray_ph_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(ray_ph_mod, which = 1)
+plot(ray_ph_mod, which = 2)
+```
+A low p-value, (0.00457), allows us to reject the null hypothess that there is no difference in pH over time in favor of the alternative hypothesis that pH does change significantly over time. The qq plot shows similar "s" shaped pattern.
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+ggplot(data = rays, aes(x=Time, y=pH)) +
+  geom_point() +
+  stat_smooth(method = "lm") +
+  geom_text(mapping = aes(x=75, y=7.62, label = "y = 7.582 + -0.0003 x"), size=5) +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pH vs. Time")
+
+```
+
+***
+
+#### pCO2 (rays)
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=PCO2, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pCO2 vs. Time")
+
+# Linear regression
+ray_pco2_mod <- lm(PCO2 ~ Time, data =  rays)
+summary(ray_pco2_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(ray_pco2_mod, which = 1)
+plot(ray_pco2_mod, which = 2)
+```
+
+***
+
+High p-value,(0.121), we fail to reject the null hypothesis that there is no change in pCO2 over time. The qqplot shows a slightly "s" shaped pattern at the tails.
+
+***
+
+#### pO2 (rays)
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=PO2, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pO2 vs. Time")
+
+# Linear regression
+ray_po2_mod <- lm(PO2 ~ Time, data =  rays)
+summary(ray_po2_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(ray_po2_mod, which = 1)
+plot(ray_po2_mod, which = 2)
+```
+
+***
+
+A very low p-value, (4.32 e^-05), allows us to reject the null hypothess that there is no difference in pO2 over time in favor of the alternative hypothesis that pO2 does change significantly over time. The qq plot is skewed at the tails.
+
+***
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=PO2)) +
+  geom_point() +
+  stat_smooth(method = "lm") +
+  geom_text(mapping = aes(x=15, y=12, label = "y = 1.316 + 0.034 x"), size=5) +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pO2 vs. Time")
+```
+
+***
+
+
+### Does syringe type affect how values change over time?  
+
+#### lac*syringe  
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=Lac, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  ylab("Lac (mmol*L^-1)") +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: Lac vs. Time") +
+  facet_wrap(~ Syringe)
+
+# Linear regression with syringe interaction
+Lac_s_mod <- lm(Lac ~ Time*Syringe, data = rays)
+
+Anova(Lac_s_mod)
+
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(Lac_s_mod, which = 1)
+plot(Lac_s_mod, which = 2)
+```
+
+***
+
+A very high p-value, (0.8978), means we fail to reject the null hypothesis that syringe type has no effect on how the lactate changes over time.
+
+
+***
+
+#### pH*syringe  
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=pH, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pH vs. Time") +
+  facet_wrap(~ Syringe)
+
+# Linear regreesion with interaction
+ph_s_mod <- lm(pH ~ Time*Syringe, data = rays)
+Anova(ph_s_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(ph_s_mod, which = 1)
+plot(ph_s_mod, which = 2)
+
+```
+
+***
+
+Very high p-value, (0.753432), means we fail to reject the null hypothesis that syringe type has no effect on how the pH changes over time.
+
+
+***
+  
+#### pCO2*syringe  
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=PCO2, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pCO2 vs. Time") +
+  facet_grid(~ Syringe)
+
+pco2_s_mod <- lm(PCO2 ~ Time*Syringe, data = rays)
+
+Anova(pco2_s_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(pco2_s_mod, which = 1)
+plot(pco2_s_mod, which = 2)
+```
+
+***
+
+Very high p-value, (0.9689), means we fail to reject the null hypothesis that syringe type has no effect on how the pCO2 changes over time.
+
+***
+
+#### pO2*syringe  
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = rays, aes(x=Time, y=PO2, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ggtitle("Rays: pO2 vs. Time") +
+  facet_wrap(~ Syringe)
+
+# Linear regression with interaction
+po2_s_mod <- lm(PO2 ~ Time*Syringe, data = rays)
+
+Anova(po2_s_mod)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1, 2))
+plot(po2_s_mod, which = 1)
+plot(po2_s_mod, which = 2)
+```
+
+***
+
+Very high p-value, (0.86003), means we fail to reject the null hypothesis that syringe type has no effect on how the pO2 changes over time.
+
+
+***
+
+### Discussion
+We found that for the turtles, as well as the rays, pH and pO2 changed significantly over time. Therefore, lac and pCO2 did not change significantly over time for both animals. It seems that syringe type does not impose any change in how any of the variables change over time. There were some concerns on how well the assumptions were met for each test, however for these simpler tests it seemed to fit well enough to accept.  
+
+The information gained from this is that when collecting blood samples, (at least from these two groups of animals), pH and pO2 are time sensitive values and this must be considered when testing. It seems that lac and pCO2 for these animals may not change significantly over a 90-minute period after collection. We cannot assume anything about these values past the 90-minute timeframe. More testing is definitely necessary along with larger sample sizes, especially because of the variability seen between each animal even within each species.  
+
+One particular place that further visualizations/analyses seem to be needed is the last test of the syringe interactions that tests pO2. The graph looks like there should be a difference between the types of syringes for pO2, but the test indicates otherwise.   
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Visualize (means and standard deviation)
+ggplot(data = rays, mapping = aes(x = Syringe, y = PO2)) +
+  stat_summary(fun.data = mean_se) +
+  ggtitle('Effect of Glass vs. Plastic Syringe Type on pO2 Over Time')
+```
+
+
+The lines representing the means and standard deviations of each syringe type do not overlap. This seems to indiate a significant difference between groups. There could be too much error due to small sample size for this to be of any real concern.  
+
+Plenty of further investigation is necessary.  
+
+***

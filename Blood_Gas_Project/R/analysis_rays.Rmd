@@ -1,0 +1,178 @@
+---
+title: "rays analysis"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(car)
+
+install.packages("nlme")
+library(nlme)
+
+rays <- read.csv('~/Dropbox/Blood_Gas_Project/Data/rays/focal_ray_data.csv', stringsAsFactors = FALSE)
+rays <- rays[1:101,2:8]
+
+
+rays_gath <- rays %>%
+  gather(key = "Variable", "Value", 3:6)
+
+rays_gath <- rays_gath %>%
+  filter(!is.na(Value))
+
+
+ggplot(data = rays_gath, aes(x=Time, y=Value, color=factor(Ray), by=Ray)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(Variable ~ Syringe, scales = "free")
+```
+
+
+--------------------
+# LACTATE
+--------------------
+```{r}
+rays_lac <- rays %>%
+  filter(!is.na(Lac))
+
+
+ggplot(data = rays, aes(x=Time, y=Lac, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point()
+
+#try linear regression first
+ray_Lac_mod <- lm(Lac ~ Time, data =  rays)
+summary(ray_Lac_mod)
+plot(ray_Lac_mod)
+
+rlacmod <- lme(Lac ~ Time, data = rays_lac, random = ~1 | Ray)
+summary(rlacmod)
+plot(rlacmod)
+
+
+```
+
+--------------------
+# pH
+--------------------
+```{r}
+rays_ph <- rays %>% 
+  filter(!is.na(pH))
+
+rays_ph$res <- rays_ph$pH - mean(rays_ph$pH)
+
+ggplot(data = rays, aes(x=Lac)) +
+  geom_histogram(bins = 11)
+
+ggplot(data = rays, aes(x=Time, y=pH, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point()
+
+#try linear regression first
+ray_ph_mod <- lm(pH ~ Time, data =  rays)
+summary(ray_ph_mod)
+plot(ray_ph_mod, which = 1)
+plot(ray_ph_mod, which = 2)
+
+
+```
+
+
+--------------------
+# PCO2
+--------------------
+```{r}
+ggplot(data = rays, aes(x=Time, y=PCO2, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point()
+
+#linear regression
+ray_pco2_mod <- lm(PCO2 ~ Time, data =  rays)
+summary(ray_pco2_mod)
+plot(ray_pco2_mod, which = 1)
+plot(ray_pco2_mod, which = 2)
+
+```
+
+
+--------------------
+# PO2
+--------------------
+```{r}
+ggplot(data = rays, aes(x=Time, y=PO2, color=factor(Ray), by=Syringe)) +
+  geom_line() +
+  geom_point()
+
+#try linear regression first
+ray_po2_mod <- lm(PO2 ~ Time, data =  rays)
+summary(ray_po2_mod)
+plot(ray_po2_mod)
+
+
+#log
+ray_po2_mod2 <- lm(log(PO2) ~ Time, data =  rays)
+summary(ray_po2_mod2)
+plot(ray_po2_mod2)
+
+
+```
+
+SYRINGE COMPARISONS
+```{r}
+#use gathered data with only data points with values for both syringe types and no NAs
+
+ggplot(rays_gath, aes(x=Time, y=Value, color=factor(Ray), by=Variable)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(Variable ~ Syringe, scales = "free")
+
+syringe_mod <- lm(Value ~ Time*Syringe, data = rays_gath)
+syringe_mod2 <- lm(Value ~ Time + Syringe, data = rays_gath)
+
+Anova(syringe_mod2)
+plot(syringe_mod)
+
+
+
+```
+
+
+```{r}
+syringe_mod <- lm(Value ~ Time*Syringe, data = rays_gath)
+syringe_mod2 <- lm(Value ~ Time + Syringe + 0, data = rays_gath)
+
+
+# assumptions
+plot(syringe_mod, which = 1)
+plot(syringe_mod, which = 2)
+
+# results
+Anova(syringe_mod)
+
+#visualize (means and standard deviation)
+ggplot(data = rays_gath, mapping = aes(x = Syringe, y = Value)) +
+  stat_summary(fun.data = mean_se)
+
+ggplot(data = rays_gath, aes(x=Syringe, y=Value, color=factor(Syringe), by=Syringe)) +
+  geom_boxplot()
+
+# assumptions
+plot(syringe_mod2, which = 1)
+plot(syringe_mod2, which = 2)
+
+# results
+Anova(syringe_mod2)
+
+# residuals
+rays_gath$res <- residuals()
+
+ggplot(data = rays_gath, aes(x=Value, color=factor(Syringe), by=Syringe)) +
+  geom_histogram(bins = 7) +
+  facet_wrap(~Syringe)
+```
+
+
+
+

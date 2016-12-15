@@ -1,0 +1,152 @@
+---
+title: "Blood Gas Data from NEAq Research"
+output: slidy_presentation
+---
+```{r, include=FALSE}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# load clean data
+sliders <- read.csv('~/Dropbox/Blood_Gas_Project/Data/tidy_turtle_data.csv')
+complete_sliders <- read.csv('~/Dropbox/Blood_Gas_Project/Data/turtles/focal_turtle_data_zeros.csv')
+rays <- read.csv('~/Dropbox/Blood_Gas_Project/Data/tidy_ray_data.csv')
+complete_rays <- read.csv('~/Dropbox/Blood_Gas_Project/Data/focal_ray_data.csv')
+
+complete_sliders <- complete_sliders[1:59,2:7]
+complete_rays <- complete_rays[1:101,2:8]
+
+# variables gathered to plot all on one graph
+sliders_gath <- complete_sliders %>%
+  gather(key = "Variable", "Value", 3:6)
+
+rays_gath <- complete_rays %>%
+  gather(key = "Variable", "Value", 3:6)
+
+rays_gath <- rays_gath %>%
+  filter(!is.na(Value))
+
+
+sliders_gath <- complete_sliders %>%
+  gather(key = "Variable", "Value", 3:6)
+
+write.csv(sliders_gath, file = "sliders_gathered.csv")
+
+```
+
+## 1) What is the dataset? {.smaller}
+- Blood samples were collected in 2013 from 10 Turtles (Red-eared sliders), and 10 stingrays (Cownose rays)
+- Turtles were selected from Rainforest Reptile Shows in Beverly, MA
+- Rays were opportunistically selected from the shark and ray touch tank at the NEAq during routine spine clipping
+- blood was analyzed for pH, pCO2, pO2, and lactate values using an iStat analyzer
+- each sample was analyzed immediately (T0) and at 5, 10, 15, 45, and 90 minutes following 
+
+```{r, collapse=TRUE}
+head(complete_sliders)
+head(complete_rays)
+```
+
+
+## 2) What is your question?
+- Are there changes in blood acid-base parameters over time?
+- Do the blood acid-base parameters different between different syringe types (glass vs plastic)?  
+  
+*These values are typically measured to assess stress levels of fish, samples are taken on a boat and usually can't be analyzed until they are brought back to a lab.*
+```{r}
+
+
+```
+
+## 3) One visualization that addresses the question
+```{r, echo=FALSE}
+ggplot(data = sliders_gath, aes(x=Time, y=Value, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~Variable, scales = "free")
+```
+
+## 4) One analysis {.smaller}
+- Null hypothesis: slope is equal to zero (no sig. change in lac value over time)
+- Alt hypothesis: slope NOT equal to zero (lac value changes over time)
+```{r, collapse=TRUE}
+Lac_mod <- lm(Lac ~ Time, data =  complete_sliders)
+summary(Lac_mod)
+```
+- Fail to reject the null hypothesis because of the high p-value for Time
+- Lactate does not change significantly over time
+- Time estimate value also supports the conclusion that the slope is zero
+
+## 5) Where I am going...
+- t-test comparing glass and plastic syringes?  
+
+```{r, echo=FALSE, fig.height=7, fig.width=8}
+rays_gath$Syringe <- gsub("G", "Glass", rays_gath$Syringe)
+rays_gath$Syringe <- gsub("P", "Plastic", rays_gath$Syringe)
+
+ggplot(data = rays_gath, aes(x=Time, y=Value, color=factor(Ray), by=Ray)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(Variable ~ Syringe, scales = "free")
+```
+
+
+## Confused.
+```{r, echo=FALSE}
+ggplot(data = complete_sliders, aes(x=Time, y=PCO2, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+PCO2_mod <- lm(PCO2 ~ Time, data =  complete_sliders)
+```
+
+## Model summary
+```{r, echo=FALSE, tidy=TRUE}
+summary(PCO2_mod)
+
+```
+
+## Assumptions
+```{r, fig.height=5, fig.width=5, echo=FALSE}
+plot(PCO2_mod, which = 1)
+plot(PCO2_mod, which = 2)
+```
+
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data = sliders, aes(x=Time, y=Lac, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  xlab("Time (minutes)") +
+  ylab("Lac (mmol*L^-1") +
+  ggtitle("Turtles: Lac vs. Time")
+
+# Linear regression
+Lac_mod <- lm(Lac ~ Time, data =  sliders_lac)
+summary(Lac_mod)
+
+
+
+plot(Lac_mod, which = 1)
+plot(Lac_mod, which = 2)
+```
+
+
+
+
+```{r, include=FALSE}
+ggplot(data = complete_sliders, aes(x=Time, y=Lac, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point()
+
+ggplot(data = rays_gath, aes(x=Time, y=Value, color=factor(Ray), by=Ray)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(Variable ~ Syringe, scales = "free")
+
+ggplot(data = sliders_gath, aes(x=Time, y=Value, color=factor(Turtle), by=Turtle)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~Variable, scales = "free")
+```
+
