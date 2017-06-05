@@ -1,0 +1,312 @@
+---
+title: "Final Presentation"
+output: html_document
+---
+# COMPARING ALGAE SPECIES ABUNDANCE
+
+*Kelp Ecosystem Ecology Network (KEEN)*
+Kelp Forest Observational Sampling
+
+```{r}
+library(ggplot2)
+library(ggmap)
+library(dplyr)
+library(tidyr)
+library(car)
+library(maps)
+library(knitr)
+library(ggthemes)
+library(DHARMa)
+
+keen <- read.csv("~/Dropbox/Data_Science/Bio607_final/keen_edit.csv")
+
+
+algae_com_name <- read.csv("~/Dropbox/Data_Science/Bio607_final/algae_com_name.csv")
+
+#map <- get_googlemap(center = c(lon=mean(keen$lon), lat=mean(keen$lat)), maptype="satellite", zoom=9, size = c(275, 425))
+
+algae_formap <- keen %>%
+  filter(GROUP == "Algae") %>%
+  group_by(TRANSECT_ID, SP_CODE, lat, lon, SIDE, SITE, DIVISION.FAMILY) %>%
+  summarise(PERCENT_COVER = sum(PERCENT_COVER))
+
+algae_formap <- algae_formap %>%
+  filter(SP_CODE %in% c("HJ", "SL", "HIRU", "MAST", "CYPU"))
+
+
+```
+
+#### UNIFORM POINT COUNT (UPC)
+The purpose of the Uniform Point Contact sampling is to determine the percentage cover of algae and sessile invertebrates for sampled sites along a randomly placed transect line.
+```{r, cache=TRUE, eval=FALSE}
+#Shows algae species facetted on map
+ggmap(map) + geom_point(data=algae_formap, aes(x=lon, y=lat, size=PERCENT_COVER, color=SP_CODE)) +
+  theme(legend.position = "none") +
+  facet_wrap(~SP_CODE, nrow = 4)
+
+```
+
+
+#### 2) Given this background, what question are you asking?
+- *Are there any particular species that influence the abundance of another species competing for resources?*
+- Do different kinds of algae have particular relationships with one another?
+- 
+```{r, eval=FALSE}
+apple <- get_googlemap(center = c(lon = -70.61547, lat = 42.98884), maptype = "hybrid", zoom = 16)
+LB <- get_googlemap(center = c(lon = mean(littlebrew$lon), lat = mean(littlebrew$lat)), maptype = "hybrid", zoom = 18)
+
+mean(littlebrew$lat)
+
+appledore <- algae_formap %>%
+  group_by(SITE, TRANSECT_ID, lat, lon, DIVISION.FAMILY) %>%
+  filter(SITE %in% c("NE Appledore", "NW Appledore", "SW Appledore")) 
+%>%
+  filter(GROUP == "Algae")
+
+littlebrew <- algae_formap %>%
+  group_by(SITE, TRANSECT_ID, lat, lon, DIVISION.FAMILY) %>%
+  filter(SITE == "Little Brewster")
+%>%
+  filter(GROUP == "Algae")
+
+
+
+ggmap(map) +
+  geom_jitter(data=algae_formap, 
+              mapping = aes(x=lon, y=lat, 
+                  color=SP_CODE, 
+                  size=PERCENT_COVER, alpha=0.7), width = 0.06, height = 0.05) +
+  theme(legend.position = "none") +
+  facet_wrap(~SP_CODE) +
+  ggtitle(label = "Distribution of Focus Algae Species")
+
+ggmap(apple) +
+  geom_jitter(data=appledore, 
+              mapping = aes(x=lon, y=lat, 
+                  color=SP_CODE, 
+                  size=PERCENT_COVER), width = 0.001, height = 0.001) +
+  facet_wrap(~SP_CODE)
+
+
+ggmap(LB) +
+  geom_jitter(data=littlebrew, 
+              mapping = aes(x=lon, y=lat, 
+                  color=SP_CODE, 
+                  size=PERCENT_COVER, alpha=0.7), height=0.0002, width = 0.0002) +
+  facet_wrap(~SP_CODE)
+
+ggmap(LB) +
+  geom_point(data=littlebrew, 
+              mapping = aes(x=lon, y=lat, 
+                  color=SP_CODE, 
+                  size=PERCENT_COVER)) +
+  facet_wrap(~SP_CODE)
+  
+
+
+
+
++
+  facet_wrap(~TRANSECT_ID)
+
+ggplot(appledore, aes(x=PERCENT_COVER, y=lat, color=SIDE)) +
+  geom_point() +
+  facet_grid(SIDE~., scales = "free") +
+  stat_smooth(method = "lm")
+
+
+#### 3) What techniques did you use to answer this question?
+
+- Linear regression
+- So, so many plots.
+- Different grouping
+
+```{r, echo=FALSE, message=FALSE}
+## algae
+algae <- keen %>%
+  filter(GROUP == "Algae") %>%
+  select(TRANSECT_ID, lat, lon, SP_CODE, PERCENT_COVER)
+
+algae <- algae %>%
+  group_by(TRANSECT_ID, lat, lon, SP_CODE) %>%
+  summarise(total_cover = sum(PERCENT_COVER))
+
+# ALGAE SPECIES
+algae_sp <- algae %>%
+  group_by(TRANSECT_ID, SP_CODE) %>%
+  spread(key=SP_CODE, value=total_cover)
+
+######
+algae_lm_HIRU_SL <- lm(HIRU ~ SL, algae_sp)
+algae_lm_HJ_SL <- lm(HJ ~ SL, algae_sp)
+algae_lm_logCYPU_logMAST <- lm(log(CYPU) ~ log(MAST), algae_sp)
+```
+
+```{r,echo=FALSE, warning=FALSE}
+ggplot(algae_sp, aes(x=SL, y=HIRU)) +
+  theme_light() +
+  labs(title = "Hildenbrandia rubra vs Saccharina latissima", 
+       x = "SL (percent cover)", 
+       y = "HIRU (percent cover)") +
+  geom_label(aes(x=55, y=8, label = "Call: lm(formula = HIRU ~ SL, data = algae_sp)
+                 p-value: 0.001587")) +
+  geom_point() +
+  stat_smooth(method="lm")
+
+#n=19
+
+summary(algae_lm_HIRU_SL)
+
+par(mfrow = c(2,2))
+plot(algae_lm_HIRU_SL, which=c(1,2))
+```
+
+#### SL HJ
+```{r, warning=FALSE, echo=FALSE}
+
+ggplot(algae_sp, aes(x=SL, y=HJ)) +
+  geom_point() +
+  stat_smooth(method = "lm") +
+  theme_light() +
+  labs(title = "Heterosiphonia japonica vs Saccharina latissima", 
+       x = "SL (percent cover)", 
+       y = "HJ (percent cover)") +
+  geom_label(aes(x=60, y=70, label = "Call: lm(formula = HJ ~ SL, data = algae_sp)
+                 p-value: 2.324e-05"))
+
+summary(algae_lm_HJ_SL)
+
+#n=26
+
+par(mfrow = c(2,2))
+plot(algae_lm_HJ_SL, which=c(1,2))
+residuals(algae_lm_HIRU_SL)
+```
+
+
+
+#### Mast, CYPU
+```{r, warning=FALSE, echo=FALSE}
+ggplot(algae_sp, aes(x=log(MAST), y=log(CYPU))) +
+  geom_point() +
+  stat_smooth(method="lm") +
+  theme_light() +
+  labs(title = "log(Mastocarpus stellatus) vs log(Cystoclonium purpureum)", 
+       x = "log(MAST) (percent cover)", 
+       y = "log(CYPU) (percent cover)") +
+  geom_label(aes(x=2.5, y=1, label = "Call: lm(formula = 
+log(CYPU) ~ log(MAST),
+data = algae_sp)
+                 p-value: 0.01532"))
+
+#n=17
+
+summary(algae_lm_logCYPU_logMAST)
+
+
+
+par(mfrow = c(2,2))
+
+plot(algae_lm_logCYPU_logMAST, which=c(1,2))
+
+ggplot(data=algae_lm_logCYPU_logMAST, aes(residuals(algae_lm_logCYPU_logMAST), fitted(algae_lm_logCYPU_logMAST))) +
+  geom_point()
+
+qplot(x=residuals(algae_lm_logCYPU_logMAST), data = algae_lm_logCYPU_logMAST, geom = "histogram", bins = 15)
+qplot(x=residuals(algae_lm_HJ_SL), data = algae_lm_HJ_SL, geom = "histogram", bins=15)
+qplot(x=residuals(algae_lm_HIRU_SL), data=algae_lm_HIRU_SL, geom = "histogram", bins=20)
+
+qplot(x=HJ, data=algae_sp, geom = "histogram", bins=10)
+
+
+focus <- algae_sp %>%
+  select(TRANSECT_ID, HJ, SL, HIRU, MAST, CYPU) 
+
+focus <- focus%>%
+  gather(key=SP_CODE, value=PERCENT_COVER, -TRANSECT_ID)
+
+ggplot(focus, aes(x=SP_CODE, y=PERCENT_COVER)) +
+  geom_boxplot()
+
+```
+
+
+
+#### 4) What do we need to know about your analysis? 
+- Many other species showed some trend in their percent cover but not as strong as those mentioned above
+- MANY pairs of species with few data points
+- Looking at the divison family name (algae color family) showed that the sign of relationship between two species and their percent cover may be  dependent if they are from the same family of species or not
+
+#### 5) What did your analysis tell you?
+
+
+
+```{r, echo=FALSE, eval=FALSE}
+ggplot(algae_com_name, aes(x=Brown.Algae, y=Erect.Red.Algae)) +
+  geom_point() +
+  stat_smooth()
+
+appledore <- keen %>%
+  group_by(SITE, TRANSECT_ID, lat, lon, GROUP, DIVISION.FAMILY) %>%
+  filter(SITE %in% c("NE Appledore", "NW Appledore", "SW Appledore")) %>%
+  filter(DIVISION.FAMILY == "Molluscs")
+
+names(algae_com_name)
+
+
+gah <- lm(PERCENT_COVER ~ lat, appledore)
+plot(gah)
+
+
+glm <- glm(Erect.Red.Algae ~ Brown.Algae, family = Gamma(link="inverse"), data=algae_com_name)
+glm <- glm(PERCENT_COVER ~ lat, family=Gamma(link="inverse"), appledore)
+
+glm <- glm(Red.Algal.Crusts ~ lat, family=Gamma(link="log"), algae_com_name)
+glm <- glm(Brown.Algae ~ lat, family=Gamma(link="inverse"), algae_com_name)
+
+
+
+
+ggplot(algae_sp, aes(x=CYPU, y=HIRU)) +
+  geom_point() +
+  stat_smooth(method = "lm")
+
+lm <- lm(CYPU~ HIRU, algae_sp)
+plot(lm)
+qplot(residuals(lm), fitted(lm), stat)
+qplot(residuals(lm), geom = "histogram")
+qplot(fitted(lm), geom = "histogram")
+
+HJ
+SL
+HIRU
+MAST
+CYPU
+
+HJ, SL, MAST(NO PATTERN)
+SL, HJ, HIRU, MAST(could do for no relation), CYPU
+HIRU, SL
+MAST, CYPU, SL
+CYPU, MAST, SL
+
+
+#CYPU ~ SL, non-linear
+#HJ ~ HIRU
+#CYPU HJ
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

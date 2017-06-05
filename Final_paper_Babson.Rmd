@@ -1,0 +1,262 @@
+---
+title: "Final_Paper"
+output: html_document
+---
+
+# COMPARING ALGAE SPECIES ABUNDANCE   
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(ggmap)
+library(dplyr)
+library(tidyr)
+library(maps)
+library(knitr)
+library(ggthemes)
+library(broom)
+library(pander)
+
+
+keen <- read.csv("~/Dropbox/Data_Science/bio607_final/keen_edit.csv")
+
+
+## algae
+algae <- keen %>%
+  filter(GROUP == "Algae") %>%
+  select(TRANSECT_ID, lat, lon, SP_CODE, PERCENT_COVER)
+
+algae <- algae %>%
+  group_by(TRANSECT_ID, lat, lon, SP_CODE) %>%
+  summarise(total_cover = sum(PERCENT_COVER))
+
+# ALGAE SPECIES
+algae_sp <- algae %>%
+  group_by(TRANSECT_ID, SP_CODE) %>%
+  spread(key=SP_CODE, value=total_cover)
+
+
+# FIT LINEAR MODELS
+algae_lm_HIRU_SL <- lm(HIRU ~ SL, algae_sp)
+algae_lm_HJ_SL <- lm(HJ ~ SL, algae_sp)
+algae_lm_logCYPU_logMAST <- lm(log(CYPU) ~ log(MAST), algae_sp)
+
+#######
+#######
+
+# MAP SET UP
+#map <- get_googlemap(center = c(lon=mean(keen$lon), lat=mean(keen$lat)), maptype="satellite", zoom=9, size = c(275, 425))
+
+#ggsave(filename = "map_image.png")
+
+algae_formap <- keen %>%
+  filter(GROUP == "Algae") %>%
+  group_by(TRANSECT_ID, SP_CODE, lat, lon, SIDE, SITE, DIVISION.FAMILY) %>%
+  summarise(PERCENT_COVER = sum(PERCENT_COVER))
+
+algae_formap <- algae_formap %>%
+  filter(SP_CODE %in% c("HJ", "SL", "HIRU", "MAST", "CYPU"))
+```
+
+## INTRODUCTION   
+The Kelp Ecosystem Ecology Network (KEEN) is a collaboration of scientists working to understand how kelp forests across temperate coastlines might be impacted by global change. Kelp forests house their own ecosystems including organisms like fish and invertebrates, that are important participating members of their food web. The more information collected on these intricate systems can help to be able to predict or understand the kind of changes that might result from global forces. Although all the dynamics of kelp forests are important, the foundation of the system lies heavily on the algae. The percent cover of a species of algae could be highly influenced by the abundance of other algal species in the same transect. The goal is to evaluate if the abundance of one species of algae may have a correlation with the abundance of another species of algae in that transect.    
+- Is the relationship between percent cover of two species different from zero?   
+- Does the abundance of one species explain the variation in another species in that are?   
+
+***
+
+```{r, echo=FALSE, warning=FALSE, eval=FALSE}
+
+ggmap(map, legend = "bottomright") +
+  geom_jitter(data=algae_formap, 
+              mapping = aes(x=lon, y=lat, 
+                  size=PERCENT_COVER, color=SP_CODE), 
+              alpha=0.7, width = 0.06, height = 0.05) +
+  theme_few() +
+  facet_wrap(~SP_CODE) +
+  ggtitle(label = "Distribution of Focus Algae Species") +
+  xlab(label = "Latitude") +
+  ylab(label = "Longitude")
+
+
+
+
+```
+
+
+***
+
+
+## METHODS  
+#### Data Collection (Summary)  
+This data was collected following the “Uniform Point Protocol” procedures outlined in the Kelp Ecosystem Ecology Network Handbook (1). Uniform Point Count (UPC) sampling is conducted to calculate the cover of algae and sessile invertebrates for sampled sites. The focus of this paper is on the algae species and the direct interaction percent cover of one species and the percent cover of another species occupying the same site. The diver swims the length of the 40m transect centering a meter stick perpendicular to the transect tape at each meter interval. The diver records the species that intersect an imaginary vertical line positioned at each end of the meter stick.  The diver swims the length of the 40m transect centering a meter stick perpendicular to the transect tape at each meter interval. At each meter the diver records any species intersecting the imaginary line located at each end of the stick. The percent cover is for each species is determined separately so if there are multiple species recorded under each of the 80 points, the transect may have a total percent coverage greater than 100%. This makes it easier to compare abundance of species within each transect. (1)   
+
+
+#### Data Analysis   
+I spent quite a bit of time trying different methods of visualizing the raw data recorded at each of the 80 sample points in a transect. Before diving into analysis I had to wrangle the raw data points to have one value that represented the total percent coverage of each species in each transect. I used spread, filter, and summarise to determine which species had the most data points recorded so that I could maximize the probability that I would have overlapping points of species at each transect. I was hoping to get at least one example of each possible combination of algae types (Phaeophyta, Rhodophyta, Chlorophyta), but I could not with the data I was working with so I dropped one of my original hypotheses. There were only two species and thirteen observations total for Chlorophyta, and there were not enough overlapping species to compare similar data. I was able to get samples sizes of at least n=17. When I worked out what species would be the most appropriate to use, I plotted a boxplot of the distribution of each species for a quick, visual normality check.   
+After sifting through all 34 species of algae, I found five species that met my criteria: Hildenbrandia rubra, Saccharina latissima, Heterosiphonia japonica, Cystoclonium purpureum, and Mastocarpus stellatus. The significant pairs that met the assumptions for linear regression of their percent cover values were Heterosiphonia japonica  and  Saccharina latissima, Hildenbrandia rubra and Saccharina latissima,  and the log of Cystoclonium purpureum and log of Mastocarpus stellatus. I performed both a t-test and an f-test on each of the three models, (alpha level set at 0.05 for all tests).   
+
+
+***
+
+
+## RESULTS   
+
+My first hypothesis predicted that the slope of the relationship between percent cover of Heterosiphonia japonica and percent cover of Saccharina latissima is different from zero, with the null hypothesis being that the slope is no different from zero. 
+
+***
+
+```{r, warning=FALSE, echo=FALSE, fig.align="center"}
+ggplot(algae_sp, aes(x=SL, y=HIRU)) +
+  theme_light() +
+  labs(title = "Hildenbrandia rubra vs Saccharina latissima", 
+       x = "SL (percent cover)", 
+       y = "HIRU (percent cover)") +
+  geom_label(aes(x=55, y=8, label = "Call: lm(formula = HIRU ~ SL, data = algae_sp)
+                 p-value: 0.001587")) +
+  geom_point() +
+  stat_smooth(method="lm")
+```
+
+```{r SL HJ Assumptions, fig.height=3, fig.width=6, echo=FALSE, fig.align="center"}
+par(mfrow = c(1,2))
+
+# QQ
+plot(algae_lm_HIRU_SL, which = 2)
+# FITTED VS RESIDUAL VALUES
+plot(algae_lm_HIRU_SL, which = 1)
+# RESIDUALS ARE NORMAL
+qplot(x=residuals(algae_lm_HIRU_SL), geom="histogram", bins=20)  
+```
+
+The assumptions of the linear model are shown above. The qq plot is acceptable, the residuals vs fitted values may show a slight deviation from linearity but nothing the residuals appear normally distributed. The assumptions appear to have been met for linear regression.
+
+***
+
+```{r, pander, echo=FALSE, fig.align="center"}
+pander(summary(algae_lm_HIRU_SL))
+```
+
+The t-test results had a p-value of 2.32e-5, which is below 0.05 so the null hypothesis is rejected that the slope is no different from zero in favor of the alternative hypothesis.
+Next I performed an f-test to test the hypothesis that this model explains variation in the data. The p-value was 2.324e-5 so the null that the model does not explain any variation in the data in favor of the alternative hypothesis that that it does explain variation in the data. The R-squared value was 0.5326.  
+
+***
+
+The next hypothesis was that the slope of the linear relationship between percent cover of  Hildenbrandia rubra and Saccharina latissima is different from zero with the null hypothesis stating the slope is no different from zero.  
+
+***
+```{r, warning=FALSE, echo=FALSE, fig.align="center"}
+
+ggplot(algae_sp, aes(x=SL, y=HJ)) +
+  geom_point() +
+  stat_smooth(method = "lm") +
+  theme_light() +
+  labs(title = "Heterosiphonia japonica vs Saccharina latissima", 
+       x = "SL (percent cover)", 
+       y = "HJ (percent cover)") +
+  geom_label(aes(x=60, y=70, label = "Call: lm(formula = HJ ~ SL, data = algae_sp)
+                 p-value: 2.324e-05"))
+```
+
+```{r, warning=FALSE, echo=FALSE, fig.height=3, fig.width=6, fig.align="center"}
+par(mfrow = c(1,2))
+# QQ
+plot(algae_lm_HJ_SL, which = 2)
+# FITTED VS RESIDUAL VALUES
+plot(algae_lm_HJ_SL, which = 1)
+# RESIDUALS ARE NORMAL
+qplot(x=residuals(algae_lm_HJ_SL), geom="histogram", bins=20)  
+```
+
+The assumptions plotted above show a decent qq plot that may have one or two points on the ends that are imperfect but overall it indicates lineariy. The fitted vs residuals look similar to the last test, but are acceptable. The residuals are approximately normally distributed as shown by the histogram.
+
+***
+
+```{r, echo=FALSE, fig.align="center"}
+pander(summary(algae_lm_HJ_SL))
+```
+
+***
+
+The t-test had a p-value of 0.00159 so it is low enough to reject the null. The f-test evaluated the hypothesis that the model explains variation in the data. With a p-value of 0.00159 the null hypothesis that the model explains no variation in the data is rejected in favor of the alternative hypothesis. The R-squared value is 0.453.   
+
+***
+
+The alternative hypothesis is that the slope of the linear relationship between log(percent cover of  Cystoclonium purpureum) and log(percent cover of Mastocarpus stellatus is different from zero.   
+
+***
+
+```{r, warning=FALSE, echo=FALSE, fig.align="center"}
+ggplot(algae_sp, aes(x=log(MAST), y=log(CYPU))) +
+  geom_point() +
+  stat_smooth(method="lm") +
+  theme_light() +
+  labs(title = "log(Mastocarpus stellatus) vs log(Cystoclonium purpureum)", 
+       x = "log(MAST) (percent cover)", 
+       y = "log(CYPU) (percent cover)") +
+  geom_label(aes(x=2.5, y=1, label = "Call: lm(formula = 
+log(CYPU) ~ log(MAST),
+data = algae_sp)
+                 p-value: 0.01532"))
+```
+
+```{r, warning=FALSE, echo=FALSE, fig.height=3, fig.width=6, fig.align="center"}
+par(mfrow = c(1,2))
+# QQ
+plot(algae_lm_logCYPU_logMAST, which = 2)
+# FITTED VS RESIDUAL VALUES
+plot(algae_lm_logCYPU_logMAST, which = 1)
+# RESIDUALS ARE NORMAL
+qplot(x=residuals(algae_lm_logCYPU_logMAST), geom="histogram", bins=20)  
+```
+
+***
+
+```{r, echo=FALSE, fig.align="center"}
+pander(summary(algae_lm_logCYPU_logMAST))
+```
+
+***
+The p-value of 0.0153 is below 0.05 and allows the null to be rejected in favor of the alternative. The hypothesis that the model explains variation in the data was tested by the f-test and had a resulting p-value of 0.01532. This is below 0.05 so the null that the model explains no variation is rejected. R-squared value is 0.3328.   
+
+***
+***
+
+## DISCUSSION   
+
+The alternative hypothesis that the relationship between percent cover of Heterosiphonia japonica and percent cover of Saccharina latissima had a non-zero slope was characterized by the linear equation from the t-test:  
+  
+$HJ = 70.3780 - 0.8522*SL + error$  
+
+The slope of this equation tells us that for every one percent cover increase of Heterosiphonia japonica, percent cover of Saccharina latissima decreases by 0.8522. The slope is negative so the percent covers of these two species are inversely proportional. This may indicate competition between algae species. The f-test provided an R-squared value of 0.5326. This means that 53.26% of the variation in the data is explained by this model.    
+
+
+The t-test favoring the alternative hypothesis that the relationship between percent cover of Hildenbrandia rubra and percent cover of Saccharina latissima has a slope different from zero described the linear equation between them:   
+
+$HIRU = 6.34188-0.07443*SL + error$  
+
+The slope of this equation tells us that for every one percent cover increase of Hildenbrandia rubra, there is a decrease of 0.07443 percent cover of Saccharina latissima. This slope is negative, again indicating that the percent covers of the two species are inversely proportional. These may also be competitive species. The f-test provided an R-squared value of 0.453, therefore 45.3% of the variation in the data is explained by the model.    
+
+
+The third model shows a relationship between log(percent cover Cystoclonium purpureum) and log(percent cover Mastocarpus stellatus) that is very different from the other two comparisons of species.   
+	
+$log(CYPU) = 1.0423 + 0.5408*log(MAST) + error$   
+
+The slope of this line is positive, which sets apart this relationship from the other two. The equation indicates that an increase of one log(percent cover Cystoclonium purpureum) results in a 0.5408 increase of log(percent cover of Mastocarpus stellatus). This positive relationship means the two species are directly proportional, as one increases so does the other. It may be that there is very little competition pressures between these species. Low competition may simply be the result of high resource availability in that area, or there may be some driving force completely independent of competition.
+	Differences in biological processes and habitat may explain the results of my tests. Red algae can grow much deeper than brown and green algae because it can absorb blue light that penetrates that depth. (2)   
+	
+***
+	
+## References
+
+1. Byrnes. Kelp Ecosystem Ecology Network Handbook.
+2. "Water Treatment Solutions." Algae Description and Types. N.p., n.d. Web.
+
+
+
+
+
+
+
+
+
